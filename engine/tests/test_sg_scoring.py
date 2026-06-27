@@ -1,4 +1,10 @@
-from engine.sg.payout import fan_to_value, settle_discard_win, settle_self_draw, settle_kong_fee
+from engine.sg.payout import (
+    fan_to_value,
+    settle_discard_win,
+    settle_gang,
+    settle_self_draw,
+    settle_yao,
+)
 from engine.sg.scoring import HandContext, score_hand
 from engine.tiles import parse_tiles
 
@@ -57,11 +63,56 @@ def test_settle_self_draw():
     assert all(t.amount == 4 for t in transfers)  # 2x discard rate
 
 
-def test_settle_kong_fee():
-    players = ["Alice", "Bob", "Carol", "Dave"]
-    transfers = settle_kong_fee("Alice", fee=0.1, players=players)
+PLAYERS = ["Alice", "Bob", "Carol", "Dave"]
+
+
+def test_yao_an_everyone():
+    # an yao = 2x, split among the 3 others -> 2x/3 each
+    transfers = settle_yao("Alice", "an", x=3, players=PLAYERS)
     assert len(transfers) == 3
-    assert all(t.amount == 0.1 and t.payee == "Alice" for t in transfers)
+    assert all(t.payee == "Alice" and t.amount == 2 for t in transfers)  # 6/3
+
+
+def test_yao_hou_everyone():
+    # hou yao = x, split 3 ways -> x/3 each
+    transfers = settle_yao("Alice", "hou", x=3, players=PLAYERS)
+    assert len(transfers) == 3
+    assert all(t.amount == 1 for t in transfers)  # 3/3
+
+
+def test_yao_one_person():
+    # one named target pays the whole amount alone (an yao = 2x)
+    transfers = settle_yao("Alice", "an", x=3, players=PLAYERS, target="Bob")
+    assert len(transfers) == 1
+    assert transfers[0].payer == "Bob" and transfers[0].amount == 6
+
+
+def test_gang_an():
+    # concealed kong = 2y, split 3 ways -> 2y/3 each
+    transfers = settle_gang("Alice", "an", y=3, players=PLAYERS)
+    assert len(transfers) == 3
+    assert all(t.amount == 2 for t in transfers)  # 6/3
+
+
+def test_gang_shoot_shooter_pays():
+    # shoot gang, shooter named -> discarder pays full y alone
+    transfers = settle_gang("Alice", "shoot", y=3, players=PLAYERS, shooter="Carol")
+    assert len(transfers) == 1
+    assert transfers[0].payer == "Carol" and transfers[0].amount == 3
+
+
+def test_gang_shoot_everyone():
+    # shoot gang, no shooter named -> y split 3 ways
+    transfers = settle_gang("Alice", "shoot", y=3, players=PLAYERS)
+    assert len(transfers) == 3
+    assert all(t.amount == 1 for t in transfers)
+
+
+def test_gang_after_peng():
+    # added kong = y, split 3 ways
+    transfers = settle_gang("Alice", "peng", y=3, players=PLAYERS)
+    assert len(transfers) == 3
+    assert all(t.amount == 1 for t in transfers)
 
 
 def run_all():

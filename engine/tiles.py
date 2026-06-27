@@ -4,7 +4,8 @@ Tile codes:
   Suited:  "<1-9><suit>"  suit in B (bamboo), C (character), D (dot)
   Winds:   "EW", "SW", "WW", "NW"
   Dragons: "RD" (red), "GD" (green), "WD" (white)
-  Flowers: "F1".."F4"  (seat-matched: F1=East, F2=South, F3=West, F4=North)
+  Flowers: "F1".."F4"  (plum, orchid, chrysanthemum, bamboo; seat-matched F1=East..F4=North)
+  Seasons: "S1".."S4"  (spring, summer, autumn, winter; seat-matched S1=East..S4=North)
   Animals: "AN1".."AN4" (cat, mouse, rooster, centipede - SG house rule bonus tiles)
 """
 from __future__ import annotations
@@ -15,9 +16,10 @@ SUITS = ("B", "C", "D")
 WINDS = ("EW", "SW", "WW", "NW")
 DRAGONS = ("RD", "GD", "WD")
 FLOWERS = ("F1", "F2", "F3", "F4")
+SEASONS = ("S1", "S2", "S3", "S4")
 ANIMALS = ("AN1", "AN2", "AN3", "AN4")
 
-BONUS_TILES = FLOWERS + ANIMALS
+BONUS_TILES = FLOWERS + SEASONS + ANIMALS
 HONOR_TILES = WINDS + DRAGONS
 
 

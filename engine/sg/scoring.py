@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..decompose import TileSet, find_decompositions, is_seven_pairs
-from ..tiles import DRAGONS, FLOWERS, WINDS, Tile, split_bonus
+from ..tiles import DRAGONS, FLOWERS, SEASONS, WINDS, Tile, split_bonus
 
 LIMIT_FAN = 10  # fan count at which a hand is capped ("limit hand")
 
@@ -104,11 +104,16 @@ def score_hand(tiles: list[Tile], ctx: HandContext) -> ScoreResult:
 
     bonus_fan: dict[str, int] = {}
     flower_count = sum(1 for t in bonus if t.code in FLOWERS)
+    season_count = sum(1 for t in bonus if t.code in SEASONS)
     animal_count = sum(1 for t in bonus if t.code in ("AN1", "AN2", "AN3", "AN4"))
     if flower_count:
         bonus_fan["Flowers"] = flower_count
     if flower_count == 4:
         bonus_fan["All Flowers"] = 1
+    if season_count:
+        bonus_fan["Seasons"] = season_count
+    if season_count == 4:
+        bonus_fan["All Seasons"] = 1
     if animal_count:
         bonus_fan["Animals"] = animal_count
     if animal_count == 4:

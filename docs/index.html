@@ -12,108 +12,123 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--tg-theme-bg-color, #ffffff);
       color: var(--tg-theme-text-color, #000000);
-      padding: 12px 12px 90px;
+      padding: 14px 14px 96px;
     }
+    h1 { font-size: 1.1rem; margin: 0 0 14px; }
     h2 {
-      font-size: 1rem;
-      margin: 18px 0 8px;
+      font-size: 0.78rem;
+      margin: 16px 0 7px;
       color: var(--tg-theme-hint-color, #888);
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
-    .row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .row { display: flex; flex-wrap: wrap; gap: 7px; }
     .chip {
       border: 1px solid var(--tg-theme-hint-color, #ccc);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 0.85rem;
+      border-radius: 9px;
+      padding: 9px 12px;
+      font-size: 0.9rem;
       background: var(--tg-theme-secondary-bg-color, #f2f2f2);
       color: inherit;
       cursor: pointer;
       user-select: none;
-      position: relative;
     }
     .chip.selected {
       background: var(--tg-theme-button-color, #2ea6ff);
       color: var(--tg-theme-button-text-color, #fff);
       border-color: transparent;
     }
-    .tile-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
-    .tile {
+    /* Top-level action buttons */
+    .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .action-btn {
+      padding: 18px 0;
       border: 1px solid var(--tg-theme-hint-color, #ccc);
-      border-radius: 6px;
-      padding: 6px 0;
-      text-align: center;
-      font-size: 0.75rem;
+      border-radius: 12px;
       background: var(--tg-theme-secondary-bg-color, #f2f2f2);
-      cursor: pointer;
-      position: relative;
+      color: inherit;
+      font-size: 1.05rem;
+      font-weight: 600;
+      text-align: center;
     }
-    .tile.selected, .chip.selected { background: var(--tg-theme-button-color, #2ea6ff); color: #fff; }
-    .count {
-      position: absolute;
-      top: -6px;
-      right: -6px;
-      background: #ff5252;
-      color: #fff;
-      border-radius: 50%;
-      width: 17px;
-      height: 17px;
-      font-size: 0.65rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .action-btn.selected {
+      background: var(--tg-theme-button-color, #2ea6ff);
+      color: var(--tg-theme-button-text-color, #fff);
+      border-color: transparent;
     }
-    #handSummary { margin-top: 10px; font-size: 0.85rem; color: var(--tg-theme-hint-color, #888); }
-    #submitBtn {
+    .panel { display: none; margin-top: 6px; }
+    .panel.active { display: block; }
+    #confirmBtn {
       position: fixed;
       bottom: 16px;
-      left: 12px;
-      right: 12px;
-      padding: 14px;
+      left: 14px;
+      right: 14px;
+      padding: 15px;
       border: none;
-      border-radius: 10px;
+      border-radius: 11px;
       background: var(--tg-theme-button-color, #2ea6ff);
       color: var(--tg-theme-button-text-color, #fff);
       font-size: 1rem;
       font-weight: 600;
     }
-    #submitBtn:disabled { opacity: 0.4; }
+    #confirmBtn:disabled { opacity: 0.4; }
   </style>
 </head>
 <body>
-  <h2>Winner</h2>
-  <div class="row" id="winnerRow"></div>
+  <h1>🀄 Record an action</h1>
 
-  <h2>Win Type</h2>
-  <div class="row">
-    <div class="chip" id="selfDrawChip">Self-Draw</div>
-    <div class="chip selected" id="discardChip">Won off Discard</div>
+  <div class="actions">
+    <div class="action-btn" data-action="hu">Hu (win)</div>
+    <div class="action-btn" data-action="zimo">Zimo (self-draw)</div>
+    <div class="action-btn" data-action="gang">Gang (kong)</div>
+    <div class="action-btn" data-action="yao">Yao (bite)</div>
   </div>
 
-  <div id="discarderSection">
-    <h2>Discarder</h2>
-    <div class="row" id="discarderRow"></div>
+  <!-- HU: tai > who shoot who -->
+  <div class="panel" id="panel-hu">
+    <h2>Tai</h2><div class="row" data-pick="hu.tai"></div>
+    <h2>Winner</h2><div class="row" data-pick="hu.winner"></div>
+    <h2>Discarder (who shot)</h2><div class="row" data-pick="hu.discarder"></div>
   </div>
 
-  <h2>Seat Wind (winner)</h2>
-  <div class="row" id="seatWindRow"></div>
+  <!-- ZIMO: tai -->
+  <div class="panel" id="panel-zimo">
+    <h2>Winner</h2><div class="row" data-pick="zimo.winner"></div>
+    <h2>Tai</h2><div class="row" data-pick="zimo.tai"></div>
+  </div>
 
-  <h2>Round Wind</h2>
-  <div class="row" id="roundWindRow"></div>
+  <!-- GANG: type > (shoot: who shot who) -->
+  <div class="panel" id="panel-gang">
+    <h2>Gang type</h2>
+    <div class="row" data-pick="gang.gang_type">
+      <div class="chip" data-value="an">An gang (2y)</div>
+      <div class="chip" data-value="shoot">Shoot gang (y)</div>
+      <div class="chip" data-value="peng">Gang after peng (y)</div>
+    </div>
+    <h2>Konger</h2><div class="row" data-pick="gang.konger"></div>
+    <div id="gang-shooter-section" style="display:none">
+      <h2>Shooter (who shot)</h2><div class="row" data-pick="gang.shooter"></div>
+    </div>
+  </div>
 
-  <h2>Hand Tiles (tap to add, tap at max to clear)</h2>
-  <div class="tile-grid" id="bambooGrid"></div>
-  <div class="tile-grid" id="characterGrid" style="margin-top:4px"></div>
-  <div class="tile-grid" id="dotGrid" style="margin-top:4px"></div>
-  <div class="row" style="margin-top:4px" id="honorRow"></div>
+  <!-- YAO: an/hou > everyone/one person -->
+  <div class="panel" id="panel-yao">
+    <h2>Yao type</h2>
+    <div class="row" data-pick="yao.yao_type">
+      <div class="chip" data-value="an">An yao (2x)</div>
+      <div class="chip" data-value="hou">Hou yao (x)</div>
+    </div>
+    <h2>Biter</h2><div class="row" data-pick="yao.biter"></div>
+    <h2>Paid by</h2>
+    <div class="row" data-pick="yao.scope">
+      <div class="chip" data-value="everyone">Everyone</div>
+      <div class="chip" data-value="one">One person</div>
+    </div>
+    <div id="yao-target-section" style="display:none">
+      <h2>Who pays</h2><div class="row" data-pick="yao.target"></div>
+    </div>
+  </div>
 
-  <h2>Bonus Tiles (flowers / animals)</h2>
-  <div class="row" id="bonusRow"></div>
-
-  <div id="handSummary"></div>
-
-  <button id="submitBtn" disabled>Submit (0/14 tiles)</button>
+  <button id="confirmBtn" disabled>Select an action</button>
 
   <script>
     const tg = window.Telegram.WebApp;
@@ -123,186 +138,115 @@
     const params = new URLSearchParams(window.location.search);
     const players = (params.get("players") || "Player1,Player2,Player3,Player4").split(",");
 
-    const state = {
-      winner: null,
-      selfDraw: false,
-      discarder: null,
-      seatWind: "EW",
-      roundWind: "EW",
-      tiles: {}, // code -> count
-    };
+    // state[action] holds that action's field selections
+    const state = { hu: {}, zimo: {}, gang: {}, yao: {} };
+    let activeAction = null;
 
-    function renderPlayerRow(container, key) {
-      container.innerHTML = "";
-      players.forEach((name) => {
+    // Single-select chip row. data-pick="action.field"
+    function bindRow(row) {
+      const [action, field] = row.dataset.pick.split(".");
+      row.querySelectorAll(".chip").forEach((chip) => {
+        chip.onclick = () => {
+          state[action][field] = chip.dataset.value;
+          [...row.children].forEach((c) => c.classList.remove("selected"));
+          chip.classList.add("selected");
+          onChange(action, field);
+        };
+      });
+    }
+
+    // Fill a row with one chip per option [value, label].
+    function fillRow(selector, options) {
+      const row = document.querySelector(selector);
+      options.forEach(([value, label]) => {
         const chip = document.createElement("div");
         chip.className = "chip";
-        chip.textContent = name;
-        chip.onclick = () => {
-          state[key] = name;
-          [...container.children].forEach((c) => c.classList.remove("selected"));
-          chip.classList.add("selected");
-          updateSubmit();
-        };
-        container.appendChild(chip);
-      });
-    }
-
-    function renderWindRow(container, key, defaultVal) {
-      container.innerHTML = "";
-      const winds = [["EW", "East"], ["SW", "South"], ["WW", "West"], ["NW", "North"]];
-      winds.forEach(([code, label]) => {
-        const chip = document.createElement("div");
-        chip.className = "chip" + (code === defaultVal ? " selected" : "");
+        chip.dataset.value = value;
         chip.textContent = label;
-        chip.onclick = () => {
-          state[key] = code;
-          [...container.children].forEach((c) => c.classList.remove("selected"));
-          chip.classList.add("selected");
-        };
-        container.appendChild(chip);
+        row.appendChild(chip);
       });
+      bindRow(row);
     }
 
-    function tileCount() {
-      return Object.entries(state.tiles)
-        .filter(([code]) => !code.startsWith("F") && !code.startsWith("AN"))
-        .reduce((sum, [, n]) => sum + n, 0);
-    }
+    const playerOpts = players.map((p) => [p, p]);
+    const taiOpts = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => [String(n), String(n)]);
 
-    function maxForTile(code) {
-      if (code.startsWith("F") || code.startsWith("AN")) return 1;
-      return 4;
-    }
+    // Player pickers
+    ["hu.winner", "hu.discarder", "zimo.winner", "gang.konger", "gang.shooter", "yao.biter", "yao.target"]
+      .forEach((p) => fillRow(`[data-pick="${p}"]`, playerOpts));
+    // Tai pickers
+    fillRow('[data-pick="hu.tai"]', taiOpts);
+    fillRow('[data-pick="zimo.tai"]', taiOpts);
+    // Static rows (gang_type, yao_type, scope) already have chips in HTML
+    document.querySelectorAll('[data-pick="gang.gang_type"],[data-pick="yao.yao_type"],[data-pick="yao.scope"]')
+      .forEach(bindRow);
 
-    function renderTileGrid(container, codes, labels) {
-      container.innerHTML = "";
-      codes.forEach((code, i) => {
-        const div = document.createElement("div");
-        div.className = "tile";
-        div.textContent = labels[i];
-        div.dataset.code = code;
-        div.onclick = () => addTile(code);
-        container.appendChild(div);
-      });
-    }
-
-    function addTile(code) {
-      const current = state.tiles[code] || 0;
-      const isBonus = code.startsWith("F") || code.startsWith("AN");
-      if (!isBonus && tileCount() >= 14 && current === 0) return;
-      if (current >= maxForTile(code)) {
-        delete state.tiles[code];
-      } else {
-        state.tiles[code] = current + 1;
-      }
-      renderCounts();
-      updateSubmit();
-    }
-
-    function renderCounts() {
-      document.querySelectorAll(".tile[data-code], .chip[data-code]").forEach((el) => {
-        const code = el.dataset.code;
-        const n = state.tiles[code] || 0;
-        let badge = el.querySelector(".count");
-        if (n > 0) {
-          if (!badge) {
-            badge = document.createElement("div");
-            badge.className = "count";
-            el.appendChild(badge);
-          }
-          badge.textContent = n;
-          el.classList.add("selected");
-        } else {
-          if (badge) badge.remove();
-          el.classList.remove("selected");
-        }
-      });
-      document.getElementById("handSummary").textContent = `${tileCount()}/14 playing tiles selected`;
-    }
-
-    function updateSubmit() {
-      const btn = document.getElementById("submitBtn");
-      const n = tileCount();
-      const ready = state.winner && n === 14 && (state.selfDraw || state.discarder);
-      btn.disabled = !ready;
-      btn.textContent = `Submit (${n}/14 tiles)`;
-    }
-
-    renderPlayerRow(document.getElementById("winnerRow"), "winner");
-
-    document.getElementById("selfDrawChip").onclick = () => {
-      state.selfDraw = true;
-      document.getElementById("selfDrawChip").classList.add("selected");
-      document.getElementById("discardChip").classList.remove("selected");
-      document.getElementById("discarderSection").style.display = "none";
-      updateSubmit();
-    };
-    document.getElementById("discardChip").onclick = () => {
-      state.selfDraw = false;
-      document.getElementById("discardChip").classList.add("selected");
-      document.getElementById("selfDrawChip").classList.remove("selected");
-      document.getElementById("discarderSection").style.display = "block";
-      updateSubmit();
-    };
-
-    renderPlayerRow(document.getElementById("discarderRow"), "discarder");
-    renderWindRow(document.getElementById("seatWindRow"), "seatWind", "EW");
-    renderWindRow(document.getElementById("roundWindRow"), "roundWind", "EW");
-
-    const bamboo = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${n}B`);
-    const character = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${n}C`);
-    const dot = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${n}D`);
-    renderTileGrid(document.getElementById("bambooGrid"), bamboo, bamboo.map((c) => c[0] + "🎋"));
-    renderTileGrid(document.getElementById("characterGrid"), character, character.map((c) => c[0] + "萬"));
-    renderTileGrid(document.getElementById("dotGrid"), dot, dot.map((c) => c[0] + "⊙"));
-
-    const honors = [
-      ["EW", "East"], ["SW", "South"], ["WW", "West"], ["NW", "North"],
-      ["RD", "Red Dragon"], ["GD", "Green Dragon"], ["WD", "White Dragon"],
-    ];
-    const honorRow = document.getElementById("honorRow");
-    honors.forEach(([code, label]) => {
-      const chip = document.createElement("div");
-      chip.className = "chip";
-      chip.dataset.code = code;
-      chip.textContent = label;
-      chip.onclick = () => addTile(code);
-      honorRow.appendChild(chip);
-    });
-
-    const bonusTiles = [
-      ["F1", "🌸 Flower 1"], ["F2", "🌸 Flower 2"], ["F3", "🌸 Flower 3"], ["F4", "🌸 Flower 4"],
-      ["AN1", "🐀 Rat"], ["AN2", "🐱 Cat"], ["AN3", "🐓 Rooster"], ["AN4", "🐛 Centipede"],
-    ];
-    const bonusRow = document.getElementById("bonusRow");
-    bonusTiles.forEach(([code, label]) => {
-      const chip = document.createElement("div");
-      chip.className = "chip";
-      chip.dataset.code = code;
-      chip.textContent = label;
-      chip.onclick = () => addTile(code);
-      bonusRow.appendChild(chip);
-    });
-
-    document.getElementById("submitBtn").onclick = () => {
-      const tileList = [];
-      Object.entries(state.tiles).forEach(([code, n]) => {
-        for (let i = 0; i < n; i++) tileList.push(code);
-      });
-      const payload = {
-        winner: state.winner,
-        self_draw: state.selfDraw,
-        discarder: state.selfDraw ? null : state.discarder,
-        seat_wind: state.seatWind,
-        round_wind: state.roundWind,
-        tiles: tileList,
+    // Action button selection
+    document.querySelectorAll(".action-btn").forEach((btn) => {
+      btn.onclick = () => {
+        activeAction = btn.dataset.action;
+        document.querySelectorAll(".action-btn").forEach((b) => b.classList.remove("selected"));
+        btn.classList.add("selected");
+        document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+        document.getElementById("panel-" + activeAction).classList.add("active");
+        updateConfirm();
       };
+    });
+
+    // Conditional sub-sections
+    function onChange(action, field) {
+      if (action === "gang" && field === "gang_type") {
+        const show = state.gang.gang_type === "shoot";
+        document.getElementById("gang-shooter-section").style.display = show ? "block" : "none";
+        if (!show) delete state.gang.shooter;
+      }
+      if (action === "yao" && field === "scope") {
+        const show = state.yao.scope === "one";
+        document.getElementById("yao-target-section").style.display = show ? "block" : "none";
+        if (!show) delete state.yao.target;
+      }
+      updateConfirm();
+    }
+
+    function isReady() {
+      const s = state[activeAction] || {};
+      switch (activeAction) {
+        case "hu":
+          return s.tai && s.winner && s.discarder && s.winner !== s.discarder;
+        case "zimo":
+          return s.tai && s.winner;
+        case "gang":
+          if (!s.gang_type || !s.konger) return false;
+          if (s.gang_type === "shoot") return s.shooter && s.shooter !== s.konger;
+          return true;
+        case "yao":
+          if (!s.yao_type || !s.biter || !s.scope) return false;
+          if (s.scope === "one") return s.target && s.target !== s.biter;
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    function updateConfirm() {
+      const btn = document.getElementById("confirmBtn");
+      if (!activeAction) {
+        btn.disabled = true;
+        btn.textContent = "Select an action";
+        return;
+      }
+      btn.disabled = !isReady();
+      btn.textContent = btn.disabled ? "Fill in the details" : "Confirm " + activeAction.toUpperCase();
+    }
+
+    document.getElementById("confirmBtn").onclick = () => {
+      if (!isReady()) return;
+      const payload = Object.assign({ action: activeAction }, state[activeAction]);
       tg.sendData(JSON.stringify(payload));
       tg.close();
     };
 
-    updateSubmit();
+    updateConfirm();
   </script>
 </body>
 </html>

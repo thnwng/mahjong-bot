@@ -39,10 +39,66 @@ def settle_self_draw(winner: str, value: float, players: list[str]) -> list[Tran
     return [Transfer(payer=p, payee=winner, amount=amount) for p in others]
 
 
-def settle_kong_fee(kong_player: str, fee: float, players: list[str]) -> list[Transfer]:
-    """Each other player pays a fixed fee to whoever declared a kong."""
-    others = [p for p in players if p != kong_player]
-    return [Transfer(payer=p, payee=kong_player, amount=fee) for p in others]
+def _split_equally(payee: str, total: float, payers: list[str]) -> list[Transfer]:
+    """Spread `total` evenly across `payers` (each pays total / len(payers))."""
+    share = total / len(payers)
+    return [Transfer(payer=p, payee=payee, amount=share) for p in payers]
+
+
+# --- Yao (bite: flower / animal) ----------------------------------------
+# Side-payment: moves chips between pots, total unchanged. Base unit = x.
+#   an yao  = 2x   hou yao = x
+# Either everyone splits the total equally, or one named person pays it all.
+YAO_MULTIPLIER = {"an": 2, "hou": 1}
+
+
+def settle_yao(
+    biter: str,
+    yao_type: str,
+    x: float,
+    players: list[str],
+    target: str | None = None,
+) -> list[Transfer]:
+    """Bite payment to `biter`.
+
+    yao_type: "an" (=2x) or "hou" (=x).
+    target:   if given, that one player pays the whole amount; otherwise the
+              three other players split it equally.
+    """
+    total = YAO_MULTIPLIER[yao_type] * x
+    if target is not None:
+        return [Transfer(payer=target, payee=biter, amount=total)]
+    others = [p for p in players if p != biter]
+    return _split_equally(biter, total, others)
+
+
+# --- Gang (kong) --------------------------------------------------------
+# Side-payment, total unchanged. Base unit = y.
+#   an gang (concealed)      = 2y, split 3 ways
+#   shoot gang (off discard) = y, shooter pays alone OR split 3 ways
+#   gang after peng (added)  = y, split 3 ways
+GANG_MULTIPLIER = {"an": 2, "shoot": 1, "peng": 1}
+
+
+def settle_gang(
+    konger: str,
+    gang_type: str,
+    y: float,
+    players: list[str],
+    shooter: str | None = None,
+) -> list[Transfer]:
+    """Kong payment to `konger`.
+
+    gang_type: "an" (concealed, =2y), "shoot" (off a discard, =y), or
+               "peng" (added kong after a pung, =y).
+    shooter:   only meaningful for "shoot" gang. If given, the discarder pays
+               the whole y alone; otherwise the three others split it equally.
+    """
+    total = GANG_MULTIPLIER[gang_type] * y
+    if gang_type == "shoot" and shooter is not None:
+        return [Transfer(payer=shooter, payee=konger, amount=total)]
+    others = [p for p in players if p != konger]
+    return _split_equally(konger, total, others)
 
 
 def net_balances(transfers: list[Transfer], players: list[str]) -> dict[str, float]:

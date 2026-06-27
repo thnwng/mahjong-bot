@@ -128,6 +128,26 @@
     </div>
   </div>
 
+  <!-- RIICHI: manual han/fu win entry (shown when ?type=riichi) -->
+  <div class="panel" id="panel-riichi">
+    <h2>Winner</h2><div class="row" data-pick="riichi.winner"></div>
+    <h2>Dealer (East) this hand</h2><div class="row" data-pick="riichi.dealer"></div>
+    <h2>Win type</h2>
+    <div class="row" data-pick="riichi.win_type">
+      <div class="chip" data-value="ron">Ron (off discard)</div>
+      <div class="chip" data-value="tsumo">Tsumo (self-draw)</div>
+    </div>
+    <div id="riichi-discarder-section" style="display:none">
+      <h2>Discarder</h2><div class="row" data-pick="riichi.discarder"></div>
+    </div>
+    <h2>Han</h2><div class="row" data-pick="riichi.han"></div>
+    <div id="riichi-fu-section">
+      <h2>Fu <small>(ignored at 5+ han)</small></h2><div class="row" data-pick="riichi.fu"></div>
+    </div>
+    <h2>Dora <small>incl. aka / ura</small></h2><div class="row" data-pick="riichi.dora"></div>
+    <h2>Honba</h2><div class="row" data-pick="riichi.honba"></div>
+  </div>
+
   <button id="confirmBtn" disabled>Select an action</button>
 
   <script>
@@ -138,8 +158,10 @@
     const params = new URLSearchParams(window.location.search);
     const players = (params.get("players") || "Player1,Player2,Player3,Player4").split(",");
 
+    const gameType = params.get("type") || "sg";
+
     // state[action] holds that action's field selections
-    const state = { hu: {}, zimo: {}, gang: {}, yao: {} };
+    const state = { hu: {}, zimo: {}, gang: {}, yao: {}, riichi: {} };
     let activeAction = null;
 
     // Single-select chip row. data-pick="action.field"
@@ -181,6 +203,22 @@
     document.querySelectorAll('[data-pick="gang.gang_type"],[data-pick="yao.yao_type"],[data-pick="yao.scope"]')
       .forEach(bindRow);
 
+    // --- Riichi mode: hide the SG action menu, show the win-entry form ---
+    if (gameType === "riichi") {
+      document.querySelector(".actions").style.display = "none";
+      document.querySelector("h1").textContent = "🀄 Riichi — record a win";
+      document.getElementById("panel-riichi").classList.add("active");
+
+      ["riichi.winner", "riichi.dealer", "riichi.discarder"]
+        .forEach((p) => fillRow(`[data-pick="${p}"]`, playerOpts));
+      fillRow('[data-pick="riichi.han"]', [...Array(13)].map((_, i) => [String(i + 1), i === 12 ? "13+" : String(i + 1)]));
+      fillRow('[data-pick="riichi.fu"]', [20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110].map((n) => [String(n), String(n)]));
+      fillRow('[data-pick="riichi.dora"]', [...Array(11)].map((_, i) => [String(i), String(i)]));
+      fillRow('[data-pick="riichi.honba"]', [...Array(7)].map((_, i) => [String(i), String(i)]));
+      document.querySelectorAll('[data-pick="riichi.win_type"]').forEach(bindRow);
+      activeAction = "riichi";
+    }
+
     // Action button selection
     document.querySelectorAll(".action-btn").forEach((btn) => {
       btn.onclick = () => {
@@ -205,6 +243,15 @@
         document.getElementById("yao-target-section").style.display = show ? "block" : "none";
         if (!show) delete state.yao.target;
       }
+      if (action === "riichi" && field === "win_type") {
+        const show = state.riichi.win_type === "ron";
+        document.getElementById("riichi-discarder-section").style.display = show ? "block" : "none";
+        if (!show) delete state.riichi.discarder;
+      }
+      if (action === "riichi" && field === "han") {
+        document.getElementById("riichi-fu-section").style.display =
+          parseInt(state.riichi.han) < 5 ? "block" : "none";
+      }
       updateConfirm();
     }
 
@@ -222,6 +269,11 @@
         case "yao":
           if (!s.yao_type || !s.biter || !s.scope) return false;
           if (s.scope === "one") return s.target && s.target !== s.biter;
+          return true;
+        case "riichi":
+          if (!s.winner || !s.dealer || !s.win_type || !s.han) return false;
+          if (s.win_type === "ron" && (!s.discarder || s.discarder === s.winner)) return false;
+          if (parseInt(s.han) < 5 && !s.fu) return false;
           return true;
         default:
           return false;
@@ -241,7 +293,23 @@
 
     document.getElementById("confirmBtn").onclick = () => {
       if (!isReady()) return;
-      const payload = Object.assign({ action: activeAction }, state[activeAction]);
+      let payload;
+      if (activeAction === "riichi") {
+        const s = state.riichi;
+        payload = {
+          action: "riichi",
+          winner: s.winner,
+          dealer: s.dealer,
+          tsumo: s.win_type === "tsumo",
+          discarder: s.win_type === "ron" ? s.discarder : null,
+          han: parseInt(s.han),
+          fu: s.fu ? parseInt(s.fu) : 30,
+          dora: parseInt(s.dora || "0"),
+          honba: parseInt(s.honba || "0"),
+        };
+      } else {
+        payload = Object.assign({ action: activeAction }, state[activeAction]);
+      }
       tg.sendData(JSON.stringify(payload));
       tg.close();
     };

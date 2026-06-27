@@ -21,7 +21,8 @@ class LogEntry:
 @dataclass
 class GameSession:
     players: list[str]
-    # Base values fixed at game start (see /newgame).
+    game_type: str = "sg"    # "sg" (Singaporean) or "riichi" (Japanese)
+    # Base values fixed at game start (see /newgame). Unused for riichi.
     tai_base: float = 0.10   # 1-tai value for hu/zimo (doubles per tai)
     yao_base: float = 0.10   # x: an yao = 2x, hou yao = x
     gang_base: float = 0.10  # y: an gang = 2y, shoot/peng gang = y
@@ -49,12 +50,14 @@ _sessions: dict[int, GameSession] = {}
 def start_session(
     chat_id: int,
     players: list[str],
+    game_type: str = "sg",
     tai_base: float = 0.10,
     yao_base: float = 0.10,
     gang_base: float = 0.10,
 ) -> GameSession:
     session = GameSession(
-        players=players, tai_base=tai_base, yao_base=yao_base, gang_base=gang_base
+        players=players, game_type=game_type,
+        tai_base=tai_base, yao_base=yao_base, gang_base=gang_base,
     )
     _sessions[chat_id] = session
     return session

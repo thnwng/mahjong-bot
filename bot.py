@@ -7,7 +7,9 @@ from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
+from engine.riichi.scoring import score as riichi_score
 from engine.sg.payout import (
+    Transfer,
     fan_to_value,
     settle_discard_win,
     settle_gang,
@@ -31,12 +33,14 @@ DEFAULT_BASE = float(os.environ.get("BASE_UNIT", "0.10"))
 
 # --- helpers ------------------------------------------------------------
 
-def _fmt_transfers(transfers) -> str:
-    return "\n".join(f"  {t.payer} → {t.payee}: {t.amount:.2f}" for t in transfers)
+def _fmt_transfers(session, transfers) -> str:
+    fmt = (lambda a: f"{a:,.0f}") if session.game_type == "riichi" else (lambda a: f"{a:.2f}")
+    return "\n".join(f"  {t.payer} → {t.payee}: {fmt(t.amount)}" for t in transfers)
 
 
 def _fmt_balances(session) -> str:
-    return "\n".join(f"  {p}: {session.balances[p]:+.2f}" for p in session.players)
+    fmt = (lambda a: f"{a:+,.0f}") if session.game_type == "riichi" else (lambda a: f"{a:+.2f}")
+    return "\n".join(f"  {p}: {fmt(session.balances[p])}" for p in session.players)
 
 
 def _actioner_name(update: Update) -> str:
@@ -67,9 +71,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Commands:\n"
-        "/newgame Alice, Bob, Carol, Dave - start a session (4 players)\n"
+        "/newgame Alice, Bob, Carol, Dave - start a SG session (4 players)\n"
         "   optional values: /newgame Alice, Bob, Carol, Dave | tai 0.1 yao 0.2 gang 0.2\n"
-        "/play - open the action menu (Hu / Zimo / Gang / Yao)\n"
+        "/newriichi Alice, Bob, Carol, Dave - start a riichi session (3 or 4 players)\n"
+        "/play - open the input form (SG action menu / riichi win entry)\n"
         "/balances - show current running balances\n"
         "/log - show the chronological action log\n"
         "/endgame - end the session\n"
@@ -104,6 +109,22 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def newriichi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    raw = update.message.text.partition(" ")[2]
+    players = [p.strip() for p in raw.split(",") if p.strip()]
+    if len(players) not in (3, 4):
+        await update.message.reply_text(
+            "Usage: /newriichi Alice, Bob, Carol, Dave (3 players for sanma, 4 for yonma)"
+        )
+        return
+
+    start_session(update.effective_chat.id, players, game_type="riichi")
+    await update.message.reply_text(
+        f"Riichi session started ({len(players)} players): {', '.join(players)}\n"
+        "Use /play to record a win (han + fu)."
+    )
+
+
 async def play(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not WEBAPP_URL:
         await update.message.reply_text(
@@ -116,9 +137,11 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("No active session. Start one with /newgame first.")
         return
 
-    url = f"{WEBAPP_URL}?players={quote(','.join(session.players))}"
+    type_param = "&type=riichi" if session.game_type == "riichi" else ""
+    url = f"{WEBAPP_URL}?players={quote(','.join(session.players))}{type_param}"
+    label = "🀄 Open Win Entry" if session.game_type == "riichi" else "🀄 Open Action Menu"
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(text="🀄 Open Action Menu", web_app=WebAppInfo(url=url))]]
+        [[InlineKeyboardButton(text=label, web_app=WebAppInfo(url=url))]]
     )
     await update.message.reply_text("Tap below to record an action:", reply_markup=keyboard)
 
@@ -194,6 +217,43 @@ def _build_action(session, data: dict):
     raise ValueError(f"unknown action: {action!r}")
 
 
+def _build_riichi(session, data: dict):
+    """Settle a riichi win from manual han/fu. The `dealer` field names who is
+    East this hand; the winner is dealer iff winner == dealer."""
+    winner = data["winner"]
+    dealer = data["dealer"]
+    tsumo = bool(data["tsumo"])
+    discarder = data.get("discarder")
+    han = int(data["han"]) + int(data.get("dora", 0))
+    fu = int(data.get("fu", 30))
+    honba = int(data.get("honba", 0))
+    players = session.players
+    is_dealer = winner == dealer
+
+    s = riichi_score(han, fu, dealer=is_dealer, tsumo=tsumo, players=len(players), honba=honba)
+
+    transfers: list[Transfer] = []
+    if not tsumo:
+        if not discarder or discarder == winner:
+            raise ValueError("ron needs a discarder who isn't the winner")
+        transfers.append(Transfer(payer=discarder, payee=winner, amount=s.payments[0].amount))
+        win_desc = f"ron off {discarder}"
+    else:
+        others = [p for p in players if p != winner and p != dealer]
+        for p in s.payments:
+            if p.role == "dealer":
+                transfers.append(Transfer(payer=dealer, payee=winner, amount=p.amount))
+            else:  # non-dealer payers: everyone except winner and dealer
+                for pl in others:
+                    transfers.append(Transfer(payer=pl, payee=winner, amount=p.amount))
+        win_desc = "tsumo"
+
+    limit = f" {s.limit}" if s.limit else ""
+    fu_note = f" {fu}fu" if han < 5 else ""
+    summary = f"Riichi: {winner} {win_desc} - {han} han{fu_note}{limit} ({s.from_payments:,} pts)"
+    return summary, transfers
+
+
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session = get_session(update.effective_chat.id)
     if not session:
@@ -202,7 +262,10 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     data = json.loads(update.effective_message.web_app_data.data)
     try:
-        summary, transfers = _build_action(session, data)
+        if data.get("action") == "riichi":
+            summary, transfers = _build_riichi(session, data)
+        else:
+            summary, transfers = _build_action(session, data)
     except (KeyError, ValueError) as e:
         await update.message.reply_text(f"Invalid action: {e}")
         return
@@ -213,7 +276,7 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(
         f"🀄 {summary}\n"
         f"(entered by {actioner})\n\n"
-        f"Payouts:\n{_fmt_transfers(transfers)}\n\n"
+        f"Payouts:\n{_fmt_transfers(session, transfers)}\n\n"
         f"Balances:\n{_fmt_balances(session)}"
     )
 
@@ -225,6 +288,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("newgame", newgame))
+    application.add_handler(CommandHandler("newriichi", newriichi))
     application.add_handler(CommandHandler("play", play))
     application.add_handler(CommandHandler("balances", balances))
     application.add_handler(CommandHandler("log", show_log))

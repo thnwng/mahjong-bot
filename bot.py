@@ -74,7 +74,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Commands:\n"
         "/newgame Alice, Bob, Carol, Dave - start a SG session (4 players)\n"
         "   optional values: /newgame Alice, Bob, Carol, Dave | tai 0.1 yao 0.2 gang 0.2\n"
-        "/newriichi Alice, Bob, Carol, Dave - start a riichi session (3 or 4 players)\n"
+        "/newriichi Alice, Bob, Carol, Dave - riichi payout calculator (3 or 4 players, no tracking)\n"
         "/play - open the input form (SG action menu / riichi win entry)\n"
         "/balances - show current running balances\n"
         "/log - show the chronological action log\n"
@@ -121,8 +121,9 @@ async def newriichi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     start_session(update.effective_chat.id, players, game_type="riichi")
     await update.message.reply_text(
-        f"Riichi session started ({len(players)} players): {', '.join(players)}\n"
-        "Use /play to record a win (han + fu)."
+        f"Riichi payout calculator ready ({len(players)} players): {', '.join(players)}\n"
+        "No running balances are tracked - each win just shows its payout.\n"
+        "Use /play to calculate a win (tiles or han + fu)."
     )
 
 
@@ -152,6 +153,11 @@ async def balances(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not session:
         await update.message.reply_text("No active session. Start one with /newgame first.")
         return
+    if session.game_type == "riichi":
+        await update.message.reply_text(
+            "Riichi is a payout calculator only - no running balances are tracked."
+        )
+        return
     await update.message.reply_text("Current balances:\n" + _fmt_balances(session))
 
 
@@ -159,6 +165,11 @@ async def show_log(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session = get_session(update.effective_chat.id)
     if not session:
         await update.message.reply_text("No active session. Start one with /newgame first.")
+        return
+    if session.game_type == "riichi":
+        await update.message.reply_text(
+            "Riichi is a payout calculator only - nothing is logged."
+        )
         return
     if not session.log:
         await update.message.reply_text("No actions recorded yet.")
@@ -171,6 +182,10 @@ async def endgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session = get_session(update.effective_chat.id)
     if not session:
         await update.message.reply_text("No active session.")
+        return
+    if session.game_type == "riichi":
+        end_session(update.effective_chat.id)
+        await update.message.reply_text("Riichi calculator closed.")
         return
     out = _fmt_balances(session)
     end_session(update.effective_chat.id)
@@ -321,8 +336,17 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     actioner = _actioner_name(update)
-    session.record(actioner, summary, transfers)
 
+    if session.game_type == "riichi":
+        # Calculator only - show the payout for this hand, track nothing.
+        await update.message.reply_text(
+            f"🀄 {summary}\n"
+            f"(entered by {actioner})\n\n"
+            f"Payout:\n{_fmt_transfers(session, transfers)}"
+        )
+        return
+
+    session.record(actioner, summary, transfers)
     await update.message.reply_text(
         f"🀄 {summary}\n"
         f"(entered by {actioner})\n\n"

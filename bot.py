@@ -238,6 +238,13 @@ def _build_riichi(session, data: dict):
         seat_wind = data.get("seat_wind", "SW")   # winner's seat wind
         round_wind = data.get("round_wind", "EW")
         win_tile = data["win_tile"]
+        # The analyzer scores dealer-ness from the seat wind (East = dealer),
+        # but payouts are routed by the dealer field; they must agree or the
+        # settlement won't balance.
+        if (seat_wind == "EW") != is_dealer:
+            raise ValueError(
+                "winner's seat wind must be East iff the winner is the dealer"
+            )
         ctx = WinContext(
             seat_wind=seat_wind,
             round_wind=round_wind,

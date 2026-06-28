@@ -400,9 +400,9 @@
       fillRow('[data-pick="riichi.dora"]', [...Array(11)].map((_,i)=>[String(i),String(i)]));
 
       activeAction = "riichi";
-      buildTileGrid();
-      bindFlags();
-      bindModeToggle();
+      // NB: buildTileGrid/bindFlags/bindModeToggle are called at the end of the
+      // script - they reference const state (tileCounts, flags) declared below,
+      // which would be in the temporal dead zone if called here.
     }
 
     // Action button selection (SG mode)
@@ -726,6 +726,13 @@
       tg.sendData(JSON.stringify(payload));
       tg.close();
     };
+
+    // Riichi-only init (must run after the const/function declarations above).
+    if (gameType === "riichi") {
+      buildTileGrid();
+      bindFlags();
+      bindModeToggle();
+    }
 
     updateConfirm();
   </script>

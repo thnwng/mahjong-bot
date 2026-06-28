@@ -273,6 +273,10 @@
       <h2>Discarder</h2><div class="row" data-pick="riichi.discarder"></div>
     </div>
     <h2>Honba</h2><div class="row" data-pick="riichi.honba"></div>
+    <h2>Riichi declaration</h2>
+    <div class="flag-row">
+      <div class="flag-chip" data-flag="riichi">Riichi declared (+1 han)</div>
+    </div>
 
     <!-- AUTO mode sub-form -->
     <div id="auto-subform">
@@ -291,7 +295,6 @@
 
       <h2>Flags</h2>
       <div class="flag-row">
-        <div class="flag-chip" data-flag="riichi">Riichi</div>
         <div class="flag-chip" data-flag="double_riichi">Dbl Riichi</div>
         <div class="flag-chip" data-flag="ippatsu">Ippatsu</div>
         <div class="flag-chip" data-flag="haitei">Haitei/Houtei</div>
@@ -718,6 +721,7 @@
             han: parseInt(s.han),
             fu: s.fu ? parseInt(s.fu) : 30,
             dora: parseInt(s.dora || "0"),
+            riichi: flags.riichi || false,
           });
         }
       } else {

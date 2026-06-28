@@ -274,11 +274,12 @@ def _build_riichi(session, data: dict):
         auto_note = f"\nYaku: {yaku_str}"
     else:
         # --- manual path: user supplied han + fu ---
-        han = int(data["han"]) + int(data.get("dora", 0))
+        riichi_han = 1 if data.get("riichi") else 0
+        han = int(data["han"]) + int(data.get("dora", 0)) + riichi_han
         fu = int(data.get("fu", 30))
         s = riichi_score(han, fu, dealer=is_dealer, tsumo=tsumo,
                          players=len(players), honba=honba)
-        auto_note = ""
+        auto_note = "  (riichi +1)" if riichi_han else ""
 
     transfers: list[Transfer] = []
     if not tsumo:

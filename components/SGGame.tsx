@@ -85,11 +85,15 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
         cid !== undefined ? listByChat(cid) : Promise.resolve({ groups: [] as GroupSummary[] }),
       ])
         .then(([mine, chat]) => {
+          // If both calls failed, keep the instant-painted cache untouched.
+          if (mine.status !== "fulfilled" && chat.status !== "fulfilled") return;
           const a = mine.status === "fulfilled" ? mine.value.groups : [];
           const b = chat.status === "fulfilled" ? chat.value.groups : [];
-          const merged = mergeGroups(a, b); // account first, then chat-only groups
+          // Fold the on-device cache in at lowest priority so legacy/offline
+          // groups survive; backend (account, then chat) names/counts win.
+          const merged = mergeGroups([...localGroups(), ...a], b);
           setActive(merged);
-          setLocalGroups(merged); // refresh the on-device cache
+          setLocalGroups(merged);
         })
         .finally(() => setBooting(false));
       return;
@@ -99,7 +103,9 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
   if (booting) return null;
 
-  const goHome = () => { setOpen(null); setView("home"); setError(""); };
+  // Re-read the cache on returning home so a just-created/joined/opened group
+  // (rememberGroup updated the cache) shows up in "Your groups".
+  const goHome = () => { setOpen(null); setView("home"); setError(""); setActive(localGroups()); };
   const openByCode = async (code: string) => {
     setBusy(true); setError("");
     try { const s = await openGroup(code); rememberGroup(sumOf(s)); setOpen(s); }

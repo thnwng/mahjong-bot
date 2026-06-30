@@ -18,9 +18,10 @@ import {
   parseStartParam,
   createTracker,
   listByChat,
-  setupGroup,
   getState,
   openGroup,
+  claimSeat,
+  joinNew,
   myGroups,
   addRemoteAction,
   rememberGroup,
@@ -53,6 +54,7 @@ function mergeGroups(local: GroupSummary[], remote: GroupSummary[]): GroupSummar
 
 export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   const [open, setOpen] = useState<TrackerState | null>(null);
+  const [joining, setJoining] = useState<TrackerState | null>(null); // group whose "Join" screen is showing
   const [view, setView] = useState<"home" | "create" | "join">("home");
   const [tgChatId, setTgChatId] = useState<number | undefined>(undefined);
   const [active, setActive] = useState<GroupSummary[]>([]);   // groups THIS account is in
@@ -60,6 +62,13 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Enter a group: if you've claimed a seat -> dashboard; if not -> the Join
+  // screen (take a seat / join as new). Only claimed groups become "yours".
+  const enter = (s: TrackerState) => {
+    if (s.me) { rememberGroup(sumOf(s)); setJoining(null); setOpen(s); }
+    else { setOpen(null); setJoining(s); }
+  };
 
   // Resolve the launch. A direct group-code link opens that group; a tgroup
   // token (g<chatId>) lands on the home listing that group's groups; otherwise
@@ -70,10 +79,10 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
     if (cid !== undefined) setTgChatId(cid);
 
     if (code) {
-      // Direct group link -> open it (and record this account as a member).
+      // Direct group link -> open it (claimed -> dashboard, else -> Join screen).
       setBusy(true);
       openGroup(code)
-        .then((s) => { rememberGroup(sumOf(s)); setOpen(s); })
+        .then(enter)
         .catch((e) => setError(String((e as Error).message || e)))
         .finally(() => { setBusy(false); setBooting(false); });
       return;
@@ -118,38 +127,27 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   };
   const openByCode = async (code: string) => {
     setBusy(true); setError("");
-    try { const s = await openGroup(code); rememberGroup(sumOf(s)); setOpen(s); }
+    try { enter(await openGroup(code)); }
     catch (e) { setError(String((e as Error).message || e)); }
     finally { setBusy(false); }
   };
 
-  if (open) {
-    if (open.tracker.players.length >= 2) return <SyncPlay initial={open} onBack={goHome} />;
-    // A bot-created stub from the old flow that was never set up.
-    return (
-      <Setup
-        title="Create New Group" startLabel="Create group"
-        onStart={async (name, players, bases) => {
-          setBusy(true); setError("");
-          try { const s = await setupGroup(open.tracker.code, name, players, bases); rememberGroup(sumOf(s)); setOpen(s); }
-          catch (e) { setError(String((e as Error).message || e)); }
-          finally { setBusy(false); }
-        }}
-        onBack={goHome} busy={busy} error={error}
-      />
-    );
-  }
+  if (open) return <SyncPlay initial={open} onBack={goHome} />;
+
+  if (joining)
+    return <JoinGroup state={joining} busy={busy} onClaimed={enter}
+      onBack={() => { setJoining(null); goHome(); }} />;
 
   if (view === "create")
     return (
       <Setup
         title="Create a new group" startLabel="Create group"
         note={tgChatId !== undefined
-          ? "When you create it, I'll post a join button in your Telegram group so everyone can tap to join."
-          : undefined}
+          ? "When you create it, I'll post a join button in your Telegram group so everyone can tap to join — then pick which player you are."
+          : "After creating, pick which player you are."}
         onStart={async (name, players, bases) => {
           setBusy(true); setError("");
-          try { const s = await createTracker(name, players, bases, tgChatId); rememberGroup(sumOf(s)); setOpen(s); }
+          try { enter(await createTracker(name, players, bases, tgChatId)); }
           catch (e) { setError(String((e as Error).message || e)); }
           finally { setBusy(false); }
         }}
@@ -159,7 +157,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
   if (view === "join")
     return <JoinForm initialCode={null} busy={busy} onBack={() => { setView("home"); setError(""); }}
-      onJoined={(s) => { rememberGroup(sumOf(s)); setOpen(s); }} />;
+      onJoined={enter} />;
 
   // HOME
   return (
@@ -241,6 +239,57 @@ function JoinForm({
   );
 }
 
+// Pick which player you are when entering a group you haven't joined (mirrors
+// CoconutSplit): take over an unclaimed seat, or join as a new player.
+function JoinGroup({
+  state,
+  busy,
+  onClaimed,
+  onBack,
+}: {
+  state: TrackerState;
+  busy: boolean;
+  onClaimed: (s: TrackerState) => void;
+  onBack: () => void;
+}) {
+  const code = state.tracker.code;
+  const claimed = new Set(state.claimedNames || []);
+  const unclaimed = (state.tracker.players || []).filter((p) => !claimed.has(p));
+  const u = typeof window !== "undefined" ? window.Telegram?.WebApp?.initDataUnsafe?.user : undefined;
+  const [newName, setNewName] = useState((u?.first_name || u?.username || "").trim());
+  const [working, setWorking] = useState(false);
+  const [err, setErr] = useState("");
+  const run = async (fn: () => Promise<TrackerState>) => {
+    setWorking(true); setErr("");
+    try { onClaimed(await fn()); }
+    catch (e) { setErr(String((e as Error).message || e)); }
+    finally { setWorking(false); }
+  };
+  return (
+    <div>
+      <h1>Join {state.tracker.name || "group"}</h1>
+      <p style={{ opacity: 0.75, fontSize: "0.9rem" }}>Which player are you? This links your Telegram account to that seat.</p>
+      {unclaimed.length > 0 && (
+        <>
+          <h2>Take a seat</h2>
+          <div className="choices">
+            {unclaimed.map((p) => (
+              <div key={p} className="choice-btn" onClick={() => !working && run(() => claimSeat(code, p))}>{p}</div>
+            ))}
+          </div>
+        </>
+      )}
+      <h2>Or join as a new player</h2>
+      <input className="text-input" placeholder="Your name" value={newName} onChange={(e) => setNewName(e.target.value)} />
+      <button className="primary-btn" disabled={!newName.trim() || working || busy} onClick={() => run(() => joinNew(code, newName.trim()))}>
+        {working ? "Joining…" : `Join as ${newName.trim() || "new player"}`}
+      </button>
+      {err && <p style={{ color: "#e54848" }}>{err}</p>}
+      <button className="link-btn" onClick={onBack}>← Back</button>
+    </div>
+  );
+}
+
 function SyncPlay({ initial, onBack }: { initial: TrackerState; onBack: () => void }) {
   const [state, setState] = useState<TrackerState>(initial);
   const [syncing, setSyncing] = useState(false);
@@ -280,7 +329,7 @@ function SyncPlay({ initial, onBack }: { initial: TrackerState; onBack: () => vo
       onBack={onBack}
       banner={
         <div className="result" style={{ marginTop: 0, marginBottom: 14 }}>
-          <div className="line"><strong>Code {code}</strong> {syncing ? "· syncing…" : "· live"}</div>
+          <div className="line"><strong>Code {code}</strong> {syncing ? "· syncing…" : "· live"}{state.me ? ` · you are ${state.me}` : ""}</div>
           <div className="line" style={{ fontSize: "0.8rem", wordBreak: "break-all" }}>{shareLink}</div>
         </div>
       }

@@ -27,6 +27,8 @@ export interface RemoteAction {
 export interface TrackerState {
   tracker: Tracker;
   actions: RemoteAction[];
+  me?: string | null;        // the player seat THIS account has claimed (null = not joined yet)
+  claimedNames?: string[];   // seats already taken (so the join screen can hide them)
 }
 
 export const syncEnabled = () => Boolean(TRACK_URL);
@@ -63,9 +65,15 @@ export const createTracker = (name: string, players: string[], bases: Tracker["b
 export const listByChat = (tgChatId: number) =>
   call<{ groups: GroupSummary[] }>("list-by-chat", { tgChatId });
 
-/** Open a group AND record this account as a member (follows you across
- *  devices). Use when entering a group; polling uses getState (read-only). */
+/** Look at a group: returns whether you've claimed a seat (me) and which seats
+ *  are taken (claimedNames). Does NOT join you — claiming a seat does that. */
 export const openGroup = (code: string) => call<TrackerState>("open", { code });
+
+/** Take over an existing (unclaimed) player seat — links your account to it. */
+export const claimSeat = (code: string, player: string) => call<TrackerState>("claim", { code, player });
+
+/** Join as a brand-new player named `name`. */
+export const joinNew = (code: string, name: string) => call<TrackerState>("join-new", { code, name });
 
 /** Every group this Telegram account belongs to (any device). */
 export const myGroups = () => call<{ groups: GroupSummary[] }>("my-groups", {});

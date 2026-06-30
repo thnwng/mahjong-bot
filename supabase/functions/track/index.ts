@@ -79,23 +79,19 @@ async function announceGroup(chatId: number, name: string, by: string, code: str
   }
 }
 
-// Record (account, group) membership so a user's groups follow them across
-// devices. Best-effort: a membership write never blocks reading a group.
-async function addMember(
+// Which player seat each account has claimed in a group. Used to gate the
+// "Join Group" screen and greet the user by their seat.
+async function seatInfo(
   sb: ReturnType<typeof createClient>,
   trackerId: string,
   userId: number,
-  name: string,
-): Promise<void> {
-  if (!userId) return;
-  try {
-    await sb.from("members").upsert(
-      { tracker_id: trackerId, user_id: userId, name },
-      { onConflict: "tracker_id,user_id" },
-    );
-  } catch (_) {
-    /* membership is best-effort */
-  }
+): Promise<{ me: string | null; claimedNames: string[] }> {
+  const { data } = await sb.from("members").select("user_id,name").eq("tracker_id", trackerId);
+  const rows = (data || []) as Array<{ user_id: number; name: string | null }>;
+  return {
+    me: rows.find((r) => Number(r.user_id) === userId)?.name ?? null,
+    claimedNames: rows.map((r) => r.name).filter((n): n is string => !!n),
+  };
 }
 
 Deno.serve(async (req) => {
@@ -132,9 +128,8 @@ Deno.serve(async (req) => {
           .select()
           .single();
         if (!error) {
-          await addMember(sb, data.id, userId, actioner); // creator joins
           if (chat) await announceGroup(chat, name, actioner, code); // invite the group
-          return json({ tracker: data, actions: [] });
+          return json({ tracker: data, actions: [], me: null, claimedNames: [] }); // creator claims a seat next
         }
         if (error.code === "23505") code = randomCode(); // code collision, retry
         else throw error;
@@ -158,17 +153,39 @@ Deno.serve(async (req) => {
       return json({ groups });
     }
 
-    if (op === "open") {
-      // Open a group AND record that this account is a member (so it shows in
-      // "your groups" on any device). Polling uses "state" (read-only) instead.
+    if (op === "open" || op === "claim" || op === "join-new") {
+      // open  = look at a group (no membership change) -> returns whether you've
+      //         claimed a seat (me) and which seats are taken (claimedNames).
+      // claim = take over an existing unclaimed player seat.
+      // join-new = add yourself as a brand-new player.
       const code = String((body as { code?: string }).code || "").toUpperCase();
       const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
-      if (e1 || !tracker) return json({ error: "tracker not found" }, 404);
-      await addMember(sb, tracker.id, userId, actioner);
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+
+      if (op === "claim") {
+        const player = String((body as { player?: string }).player || "");
+        const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
+        if (!players.includes(player)) return json({ error: "no such player" }, 400);
+        const { error: ce } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: player });
+        if (ce) return json({ error: ce.code === "23505" ? "you already joined this group, or that player is taken" : ce.message }, 409);
+      } else if (op === "join-new") {
+        const raw = String((body as { name?: string }).name || "").trim();
+        if (!raw) return json({ error: "name required" }, 400);
+        const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
+        if (!players.includes(raw)) {
+          const { error: ue } = await sb.from("trackers").update({ players: [...players, raw] }).eq("id", tracker.id);
+          if (ue) throw ue;
+          tracker.players = [...players, raw];
+        }
+        const { error: ie } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: raw });
+        if (ie) return json({ error: ie.code === "23505" ? "you already joined this group, or that name is taken" : ie.message }, 409);
+      }
+
       const { data: actions, error: e3 } = await sb
         .from("actions").select().eq("tracker_id", tracker.id).order("created_at", { ascending: true });
       if (e3) throw e3;
-      return json({ tracker, actions: actions || [] });
+      const info = await seatInfo(sb, tracker.id, userId);
+      return json({ tracker, actions: actions || [], me: info.me, claimedNames: info.claimedNames });
     }
 
     if (op === "my-groups") {
@@ -199,8 +216,7 @@ Deno.serve(async (req) => {
         .select()
         .single();
       if (e1 || !tracker) return json({ error: "group not found" }, 404);
-      await addMember(sb, tracker.id, userId, actioner);
-      return json({ tracker, actions: [] });
+      return json({ tracker, actions: [], me: null, claimedNames: [] });
     }
 
     if (op === "state" || op === "action") {
@@ -221,7 +237,8 @@ Deno.serve(async (req) => {
         .eq("tracker_id", tracker.id)
         .order("created_at", { ascending: true });
       if (e3) throw e3;
-      return json({ tracker, actions });
+      const info = await seatInfo(sb, tracker.id, userId);
+      return json({ tracker, actions, me: info.me, claimedNames: info.claimedNames });
     }
 
     return json({ error: `unknown op: ${op}` }, 400);

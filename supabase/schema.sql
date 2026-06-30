@@ -43,12 +43,16 @@ create table if not exists members (
   id          uuid primary key default gen_random_uuid(),
   tracker_id  uuid not null references trackers(id) on delete cascade,
   user_id     bigint not null,                       -- Telegram account id
-  name        text,                                  -- display name at join time
+  name        text,                                  -- the PLAYER SEAT this account claimed
   created_at  timestamptz not null default now(),
-  unique (tracker_id, user_id)
+  unique (tracker_id, user_id),                       -- one seat per account per group
+  unique (tracker_id, name)                           -- a seat is claimed by at most one account
 );
 create index if not exists members_user_idx on members (user_id, created_at);
 alter table members enable row level security; -- no policies: only the Edge Function (service role) touches it
+-- Migration: enforce one-account-per-seat + drop stale auto-join rows.
+delete from members;
+alter table members add constraint members_tracker_name_key unique (tracker_id, name);
 
 alter table trackers enable row level security;
 alter table actions  enable row level security;

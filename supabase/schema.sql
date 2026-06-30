@@ -36,6 +36,20 @@ create table if not exists actions (
 );
 create index if not exists actions_tracker_idx on actions (tracker_id, created_at);
 
+-- Account-based membership: which Telegram user (account) belongs to which group,
+-- so "your groups" follows the account across devices. user_id comes from the
+-- server-validated initData, so it can't be forged.
+create table if not exists members (
+  id          uuid primary key default gen_random_uuid(),
+  tracker_id  uuid not null references trackers(id) on delete cascade,
+  user_id     bigint not null,                       -- Telegram account id
+  name        text,                                  -- display name at join time
+  created_at  timestamptz not null default now(),
+  unique (tracker_id, user_id)
+);
+create index if not exists members_user_idx on members (user_id, created_at);
+alter table members enable row level security; -- no policies: only the Edge Function (service role) touches it
+
 alter table trackers enable row level security;
 alter table actions  enable row level security;
 -- No policies on purpose: the anon key gets nothing. The Edge Function uses the

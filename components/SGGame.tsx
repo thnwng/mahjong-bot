@@ -20,9 +20,12 @@ import {
   listByChat,
   setupGroup,
   getState,
+  openGroup,
+  myGroups,
   addRemoteAction,
   rememberGroup,
   localGroups,
+  setLocalGroups,
   GroupSummary,
   BOT_APP_LINK,
   TrackerState,
@@ -61,25 +64,35 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   // token (g<chatId>) lands on the home listing that group's groups; otherwise
   // the home with just this device's groups.
   useEffect(() => {
-    setActive(localGroups());
+    setActive(localGroups()); // instant paint from the on-device cache
     const { tgChatId: cid, code } = parseStartParam();
+    if (cid !== undefined) setTgChatId(cid);
+
     if (code) {
+      // Direct group link -> open it (and record this account as a member).
       setBusy(true);
-      getState(code)
+      openGroup(code)
         .then((s) => { rememberGroup(sumOf(s)); setOpen(s); })
         .catch((e) => setError(String((e as Error).message || e)))
         .finally(() => { setBusy(false); setBooting(false); });
       return;
     }
-    if (cid !== undefined) {
-      setTgChatId(cid);
-      if (syncEnabled()) {
-        listByChat(cid)
-          .then((r) => setActive(mergeGroups(localGroups(), r.groups)))
-          .catch(() => {})
-          .finally(() => setBooting(false));
-        return;
-      }
+
+    if (syncEnabled()) {
+      // Account groups (follow you across devices) + this chat's groups (to join).
+      Promise.allSettled([
+        myGroups(),
+        cid !== undefined ? listByChat(cid) : Promise.resolve({ groups: [] as GroupSummary[] }),
+      ])
+        .then(([mine, chat]) => {
+          const a = mine.status === "fulfilled" ? mine.value.groups : [];
+          const b = chat.status === "fulfilled" ? chat.value.groups : [];
+          const merged = mergeGroups(a, b); // account first, then chat-only groups
+          setActive(merged);
+          setLocalGroups(merged); // refresh the on-device cache
+        })
+        .finally(() => setBooting(false));
+      return;
     }
     setBooting(false);
   }, []);
@@ -89,7 +102,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   const goHome = () => { setOpen(null); setView("home"); setError(""); };
   const openByCode = async (code: string) => {
     setBusy(true); setError("");
-    try { const s = await getState(code); rememberGroup(sumOf(s)); setOpen(s); }
+    try { const s = await openGroup(code); rememberGroup(sumOf(s)); setOpen(s); }
     catch (e) { setError(String((e as Error).message || e)); }
     finally { setBusy(false); }
   };
@@ -179,13 +192,13 @@ function JoinForm({
   const [loading, setLoading] = useState(false);
   const join = async () => {
     setLoading(true); setError("");
-    try { onJoined(await getState(code.trim().toUpperCase())); }
+    try { onJoined(await openGroup(code.trim().toUpperCase())); }
     catch (e) { setError(String((e as Error).message || e)); }
     finally { setLoading(false); }
   };
   return (
     <div>
-      <h1>Join a tracker</h1>
+      <h1>Join a group</h1>
       <h2>Code</h2>
       <input className="text-input" placeholder="e.g. K7P2QM" value={code} onChange={(e) => setCode(e.target.value)} />
       <button className="primary-btn" disabled={!code.trim() || loading || busy} onClick={join}>

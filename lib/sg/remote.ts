@@ -63,6 +63,13 @@ export const createTracker = (name: string, players: string[], bases: Tracker["b
 export const listByChat = (tgChatId: number) =>
   call<{ groups: GroupSummary[] }>("list-by-chat", { tgChatId });
 
+/** Open a group AND record this account as a member (follows you across
+ *  devices). Use when entering a group; polling uses getState (read-only). */
+export const openGroup = (code: string) => call<TrackerState>("open", { code });
+
+/** Every group this Telegram account belongs to (any device). */
+export const myGroups = () => call<{ groups: GroupSummary[] }>("my-groups", {});
+
 /** Fill in a bot-created group stub (code already exists, players still empty). */
 export const setupGroup = (code: string, name: string, players: string[], bases: Tracker["bases"]) =>
   call<TrackerState>("setup-group", { code, name, players, bases });
@@ -103,6 +110,11 @@ export function rememberGroup(g: GroupSummary): void {
 export function forgetGroup(code: string): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(LS_GROUPS, JSON.stringify(localGroups().filter((x) => x.code !== code)));
+}
+/** Replace the cached group list (e.g. with the account's server-side groups). */
+export function setLocalGroups(list: GroupSummary[]): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(LS_GROUPS, JSON.stringify(list.slice(0, 50)));
 }
 
 /** Bot username for building shareable deep links. Override via env if needed. */

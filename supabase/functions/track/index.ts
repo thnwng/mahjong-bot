@@ -79,6 +79,25 @@ async function announceGroup(chatId: number, name: string, by: string, code: str
   }
 }
 
+// Record (account, group) membership so a user's groups follow them across
+// devices. Best-effort: a membership write never blocks reading a group.
+async function addMember(
+  sb: ReturnType<typeof createClient>,
+  trackerId: string,
+  userId: number,
+  name: string,
+): Promise<void> {
+  if (!userId) return;
+  try {
+    await sb.from("members").upsert(
+      { tracker_id: trackerId, user_id: userId, name },
+      { onConflict: "tracker_id,user_id" },
+    );
+  } catch (_) {
+    /* membership is best-effort */
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -94,6 +113,7 @@ Deno.serve(async (req) => {
   const user = await validateInitData(initData, Deno.env.get("BOT_TOKEN") || "");
   if (!user) return json({ error: "invalid initData" }, 401);
   const actioner = String(user.first_name || user.username || user.id || "?");
+  const userId = Number((user as { id?: number }).id) || 0; // Telegram account id
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -112,6 +132,7 @@ Deno.serve(async (req) => {
           .select()
           .single();
         if (!error) {
+          await addMember(sb, data.id, userId, actioner); // creator joins
           if (chat) await announceGroup(chat, name, actioner, code); // invite the group
           return json({ tracker: data, actions: [] });
         }
@@ -137,6 +158,35 @@ Deno.serve(async (req) => {
       return json({ groups });
     }
 
+    if (op === "open") {
+      // Open a group AND record that this account is a member (so it shows in
+      // "your groups" on any device). Polling uses "state" (read-only) instead.
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "tracker not found" }, 404);
+      await addMember(sb, tracker.id, userId, actioner);
+      const { data: actions, error: e3 } = await sb
+        .from("actions").select().eq("tracker_id", tracker.id).order("created_at", { ascending: true });
+      if (e3) throw e3;
+      return json({ tracker, actions: actions || [] });
+    }
+
+    if (op === "my-groups") {
+      // Every group this account belongs to (works on any device).
+      if (!userId) return json({ groups: [] });
+      const { data, error } = await sb
+        .from("members")
+        .select("created_at, trackers(code,name,players)")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const groups = (data || [])
+        .map((m) => (m as { trackers: { code: string; name: string; players: string[] } | null }).trackers)
+        .filter((t) => t && Array.isArray(t.players) && t.players.length >= 2)
+        .map((t) => ({ code: t!.code, name: t!.name, players: t!.players.length }));
+      return json({ groups });
+    }
+
     if (op === "setup-group") {
       // Fill in an existing (bot-created) group stub: name + players + bases.
       const code = String((body as { code?: string }).code || "").toUpperCase();
@@ -149,6 +199,7 @@ Deno.serve(async (req) => {
         .select()
         .single();
       if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      await addMember(sb, tracker.id, userId, actioner);
       return json({ tracker, actions: [] });
     }
 

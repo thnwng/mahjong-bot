@@ -284,11 +284,12 @@ function Setup({
   const [names, setNames] = useState(["", "", "", ""]);
   // Payouts (per session). discard = what a single shooter pays at 1 tai;
   // zimo = what EACH other player pays on a self-draw at 1 tai. Both double per
-  // tai. Defaults reproduce the original house rule (self-draw each = 2×).
-  const [discard, setDiscard] = useState("0.10");
-  const [zimo, setZimo] = useState(""); // blank = auto 2× the shooter value
-  const [yao, setYao] = useState("0.20");
-  const [gang, setGang] = useState("0.20");
+  // tai. Defaults follow the sgmahjong.club 10¢/20¢ table (self-draw = half the
+  // shooter; bite & kong a flat 0.10). Blank self-draw falls back to 2× shooter.
+  const [discard, setDiscard] = useState("0.40");
+  const [zimo, setZimo] = useState("0.20");
+  const [yao, setYao] = useState("0.10");
+  const [gang, setGang] = useState("0.10");
   const [maxTai, setMaxTai] = useState("10");
   const [advanced, setAdvanced] = useState(false);
   const [cap, setCap] = useState("");
@@ -308,7 +309,7 @@ function Setup({
   // show the doubling preview/placeholders.
   const previewCfg: PayoutConfig = {
     tai: shooter, zimo: selfDraw,
-    yao: pos(yao, 0.2), gang: pos(gang, 0.2), maxTai: mt, ...(useCap ? { cap: capN } : {}),
+    yao: pos(yao, 0.1), gang: pos(gang, 0.1), maxTai: mt, ...(useCap ? { cap: capN } : {}),
   };
 
   // Keep the per-tai custom rows in sync with max tai (drop hidden stale rows).
@@ -333,8 +334,8 @@ function Setup({
     const cfg: PayoutConfig = {
       tai: shooter,
       zimo: selfDraw,
-      yao: pos(yao, 0.2),
-      gang: pos(gang, 0.2),
+      yao: pos(yao, 0.1),
+      gang: pos(gang, 0.1),
       maxTai: mt,
     };
     if (useCap) cfg.cap = capN;
@@ -367,7 +368,8 @@ function Setup({
 
       <h2>Payouts</h2>
       <p style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: -4 }}>
-        Values at 1 tai; they double each tai. Set these to match your table.
+        Defaults follow the sgmahjong.club table. Win values are at 1 tai and double each tai;
+        bite &amp; kong are flat. Change them to match your table.
       </p>
       <div className="row" style={{ alignItems: "center" }}>
         <label className="vlabel">shooter pays<input className="text-input small" inputMode="decimal" min="0" value={discard} onChange={(e) => setDiscard(e.target.value)} /></label>
@@ -383,12 +385,12 @@ function Setup({
         {" "}{mt} tai → {money(discardValue(previewCfg, mt))} / {money(zimoEachValue(previewCfg, mt))}
       </p>
       <p style={{ fontSize: "0.78rem", opacity: 0.6 }}>
-        Leave self-draw blank to keep it at 2× the shooter value (the usual rule). The sgmahjong.club table is the
-        exception — there self-draw is half the shooter. “Max tai” is the highest tai you can pick; bigger wins are
-        charged at the max-tai amount.
+        On sgmahjong.club the self-draw amount is half the shooter (3 people pay it). Leave self-draw blank to use
+        2× the shooter instead (the classic rule). “Max tai” is the highest tai you can pick; bigger wins are
+        charged at the max-tai amount. Bite &amp; kong are a flat amount each other player pays.
       </p>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <button type="button" className="chip" onClick={usePreset}>Match sgmahjong.club (10¢/20¢)</button>
+        <button type="button" className="chip" onClick={usePreset}>Reset to sgmahjong.club (10¢/20¢)</button>
         <button type="button" className="chip" onClick={() => setAdvanced((a) => !a)}>{advanced ? "Hide advanced" : "Advanced…"}</button>
       </div>
 
@@ -477,7 +479,7 @@ function Dashboard({
       </div>
       <p style={{ fontSize: "0.78rem", opacity: 0.65 }}>
         Payouts · 1 tai: shooter {money(discardValue(bases, 1))} / self-draw {money(zimoEachValue(bases, 1))} each ·
-        {" "}bite {money(bases.yao)} · kong {money(bases.gang)} · up to {maxTaiOf(bases)} tai
+        {" "}bite {money(bases.yao)} · kong {money(bases.gang)} each · up to {maxTaiOf(bases)} tai
       </p>
 
       <h2>Record action</h2>
@@ -550,20 +552,18 @@ function ActionForm({
       return { summary: `Zimo: ${s.winner} self-draws (${tai} tai)`, transfers: settleSelfDraw(s.winner, perPlayer, players) };
     };
   } else if (action === "gang") {
-    ready = !!(s.gtype && s.konger && (s.gtype !== "shoot" || (s.shooter && s.shooter !== s.konger)));
+    ready = !!(s.konger && s.gscope && (s.gscope !== "one" || (s.gpayer && s.gpayer !== s.konger)));
     build = () => {
-      const shooter = s.gtype === "shoot" ? s.shooter : null;
-      const label = { an: "an gang", shoot: "shoot gang", peng: "gang after peng" }[s.gtype as "an" | "shoot" | "peng"];
-      return { summary: `Gang: ${s.konger} ${label}${shooter ? ` off ${shooter}` : ""}`,
-        transfers: settleGang(s.konger, s.gtype as "an" | "shoot" | "peng", bases.gang, players, shooter) };
+      const payer = s.gscope === "one" ? s.gpayer : null;
+      return { summary: `Gang: ${s.konger} kong${payer ? ` off ${payer}` : " (all pay)"}`,
+        transfers: settleGang(s.konger, bases.gang, players, payer) };
     };
   } else {
-    ready = !!(s.ytype && s.biter && s.scope && (s.scope !== "one" || (s.target && s.target !== s.biter)));
+    ready = !!(s.biter && s.scope && (s.scope !== "one" || (s.target && s.target !== s.biter)));
     build = () => {
       const target = s.scope === "one" ? s.target : null;
-      const label = s.ytype === "an" ? "an yao" : "hou yao";
-      return { summary: `Yao: ${s.biter} ${label}${target ? ` on ${target}` : " on everyone"}`,
-        transfers: settleYao(s.biter, s.ytype as "an" | "hou", bases.yao, players, target) };
+      return { summary: `Yao: ${s.biter} bite${target ? ` on ${target}` : " (all pay)"}`,
+        transfers: settleYao(s.biter, bases.yao, players, target) };
     };
   }
 
@@ -579,14 +579,12 @@ function ActionForm({
         <h2>Tai</h2><Chips options={tais.map((n) => ({ v: String(n), label: String(n) }))} value={s.tai ?? null} onChange={(v) => set("tai", v)} />
       </>)}
       {action === "gang" && (<>
-        <h2>Gang type</h2>
-        <Chips options={[{ v: "an", label: "An gang (2y)" }, { v: "shoot", label: "Shoot gang (y)" }, { v: "peng", label: "After peng (y)" }]} value={s.gtype ?? null} onChange={(v) => set("gtype", v)} />
         <h2>Konger</h2><Chips options={playerOpts} value={s.konger ?? null} onChange={(v) => set("konger", v)} />
-        {s.gtype === "shoot" && (<><h2>Shooter</h2><Chips options={playerOpts} value={s.shooter ?? null} onChange={(v) => set("shooter", v)} /></>)}
+        <h2>Paid by</h2>
+        <Chips options={[{ v: "everyone", label: "Everyone" }, { v: "one", label: "Off a discard" }]} value={s.gscope ?? null} onChange={(v) => set("gscope", v)} />
+        {s.gscope === "one" && (<><h2>Whose discard</h2><Chips options={playerOpts} value={s.gpayer ?? null} onChange={(v) => set("gpayer", v)} /></>)}
       </>)}
       {action === "yao" && (<>
-        <h2>Yao type</h2>
-        <Chips options={[{ v: "an", label: "An yao (2x)" }, { v: "hou", label: "Hou yao (x)" }]} value={s.ytype ?? null} onChange={(v) => set("ytype", v)} />
         <h2>Biter</h2><Chips options={playerOpts} value={s.biter ?? null} onChange={(v) => set("biter", v)} />
         <h2>Paid by</h2>
         <Chips options={[{ v: "everyone", label: "Everyone" }, { v: "one", label: "One person" }]} value={s.scope ?? null} onChange={(v) => set("scope", v)} />

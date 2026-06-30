@@ -27,8 +27,9 @@ export interface PayoutConfig {
   zimoTable?: (number | null)[];
 }
 
-/** The original defaults: 0.10 tai, 0.20 yao/gang, self-draw = 2×, doubling to 10. */
-export const DEFAULT_PAYOUT: PayoutConfig = { tai: 0.1, yao: 0.2, gang: 0.2 };
+/** Default payouts — the sgmahjong.club 10¢/20¢ table: shooter 0.40 / self-draw
+ *  0.20 each at 1 tai (doubling to 10), bite & kong a flat 0.10. */
+export const DEFAULT_PAYOUT: PayoutConfig = { tai: 0.4, zimo: 0.2, yao: 0.1, gang: 0.1 };
 
 export const maxTaiOf = (c: PayoutConfig): number => c.maxTai ?? LIMIT_TAI;
 export const capOf = (c: PayoutConfig): number => c.cap ?? maxTaiOf(c);
@@ -60,9 +61,6 @@ export interface Transfer {
   amount: number;
 }
 
-const splitEqually = (payee: string, total: number, payers: string[]): Transfer[] =>
-  payers.map((p) => ({ payer: p, payee, amount: total / payers.length }));
-
 export function settleDiscardWin(winner: string, discarder: string, value: number): Transfer[] {
   return [{ payer: discarder, payee: winner, amount: value }];
 }
@@ -74,33 +72,29 @@ export function settleSelfDraw(winner: string, perPlayer: number, players: strin
     .map((p) => ({ payer: p, payee: winner, amount: perPlayer }));
 }
 
-// Yao (bite): an = 2x, hou = x. Everyone splits, or one target pays it all.
-const YAO_MULTIPLIER: Record<string, number> = { an: 2, hou: 1 };
+// Bite (yao) — flat amount per payer (sgmahjong.club: $0.10, no an/hou tiers).
+// The biter collects `amount` from every other player, or from one chosen person.
 export function settleYao(
   biter: string,
-  yaoType: "an" | "hou",
-  x: number,
+  amount: number,
   players: string[],
   target?: string | null,
 ): Transfer[] {
-  const total = YAO_MULTIPLIER[yaoType] * x;
-  if (target) return [{ payer: target, payee: biter, amount: total }];
-  return splitEqually(biter, total, players.filter((p) => p !== biter));
+  if (target) return [{ payer: target, payee: biter, amount }];
+  return players.filter((p) => p !== biter).map((p) => ({ payer: p, payee: biter, amount }));
 }
 
-// Gang (kong): an = 2y (split 3); shoot = y (shooter pays alone, else split);
-// peng = y (split 3).
-const GANG_MULTIPLIER: Record<string, number> = { an: 2, shoot: 1, peng: 1 };
+// Kang (gang) — flat amount per payer (sgmahjong.club: $0.10, no an/shoot/peng
+// tiers). The konger collects `amount` from every other player (a self-drawn or
+// concealed kong), or from one person (a kong off that player's discard).
 export function settleGang(
   konger: string,
-  gangType: "an" | "shoot" | "peng",
-  y: number,
+  amount: number,
   players: string[],
-  shooter?: string | null,
+  payer?: string | null,
 ): Transfer[] {
-  const total = GANG_MULTIPLIER[gangType] * y;
-  if (gangType === "shoot" && shooter) return [{ payer: shooter, payee: konger, amount: total }];
-  return splitEqually(konger, total, players.filter((p) => p !== konger));
+  if (payer) return [{ payer, payee: konger, amount }];
+  return players.filter((p) => p !== konger).map((p) => ({ payer: p, payee: konger, amount }));
 }
 
 export function applyTransfers(balances: Record<string, number>, transfers: Transfer[]): void {

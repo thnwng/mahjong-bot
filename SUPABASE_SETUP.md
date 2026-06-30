@@ -40,6 +40,30 @@ keys are shipped in the app.
 
    Re-run the **Deploy to GitHub Pages** workflow so the values are baked in.
 
+## The live bot (groups, /start, /help)
+
+A second Edge Function, [`bot`](supabase/functions/bot/index.ts), is the actual
+Telegram bot (a webhook). It makes the bot reply to `/start`, `/open`, `/help`,
+and to being added to a group, and it binds each Telegram group to its own
+mahjong group (a row in `trackers` keyed by `tg_chat_id`).
+
+1. **Schema**: re-run [`supabase/schema.sql`](supabase/schema.sql) (it adds the
+   `tg_chat_id` column and relaxes the `name`/`players` defaults so the bot can
+   create blank group stubs).
+2. **Deploy** the `bot` function (dashboard → Edge Functions → Deploy a new
+   function → Via Editor → paste, name it `bot`) and turn **Verify JWT OFF** in
+   its Settings (Telegram sends no JWT).
+3. **Secret**: add `WEBHOOK_SECRET` (any random string) in Edge Function Secrets.
+   `BOT_TOKEN` is reused from the synced-tracker setup above.
+4. **Register** the webhook + commands in one shot — open this once in a browser:
+   `https://<ref>.supabase.co/functions/v1/bot?action=setup&secret=<WEBHOOK_SECRET>`
+   It calls Telegram's `setWebhook` (pointing back at the `bot` function, with
+   the secret in the `X-Telegram-Bot-Api-Secret-Token` header) and `setMyCommands`
+   for private + group chats (so the commands button appears).
+5. Add **@jpgmahjongbot** to a group and send `/start` — it replies with an
+   **Open Mahjong** button. First open in a group → **Create New Group**;
+   afterwards the same button reopens that group's balances.
+
 ## How it works
 
 - **Create**: in the app, Singaporean → Synced group → Create → set players +

@@ -45,12 +45,6 @@ function computeBalances(players: string[], log: { transfers: Transfer[] }[]): R
 // ---------------------------------------------------------------- router / home
 
 const sumOf = (s: TrackerState): GroupSummary => ({ code: s.tracker.code, name: s.tracker.name, players: s.tracker.players.length });
-function mergeGroups(local: GroupSummary[], remote: GroupSummary[]): GroupSummary[] {
-  const map = new Map<string, GroupSummary>();
-  for (const g of local) map.set(g.code, g);
-  for (const g of remote) map.set(g.code, g); // backend names/counts win
-  return [...map.values()];
-}
 
 export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   const [open, setOpen] = useState<TrackerState | null>(null);
@@ -95,16 +89,13 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
         cid !== undefined ? listByChat(cid) : Promise.resolve({ groups: [] as GroupSummary[] }),
       ])
         .then(([mine, chat]) => {
-          // "Your groups" = only the groups THIS account belongs to (server) +
-          // its per-account cache. Never folds in the chat's groups.
-          if (mine.status === "fulfilled") {
-            const yours = mergeGroups(localGroups(), mine.value.groups);
-            setActive(yours);
-            setLocalGroups(yours);
-          }
+          // "Your groups" = the groups THIS account has claimed a seat in. The
+          // server is the source of truth; we don't resurrect stale cache.
+          const yours = mine.status === "fulfilled" ? mine.value.groups : localGroups();
+          if (mine.status === "fulfilled") { setActive(yours); setLocalGroups(yours); }
           // The chat's groups you're NOT already in -> a separate "join" list.
           if (chat.status === "fulfilled") {
-            const mineCodes = new Set(localGroups().map((g) => g.code));
+            const mineCodes = new Set(yours.map((g) => g.code));
             setChatGroups(chat.value.groups.filter((g) => !mineCodes.has(g.code)));
           }
         })
@@ -262,7 +253,11 @@ function JoinGroup({
   const run = async (fn: () => Promise<TrackerState>) => {
     setWorking(true); setErr("");
     try { onClaimed(await fn()); }
-    catch (e) { setErr(String((e as Error).message || e)); }
+    catch (e) {
+      setErr(String((e as Error).message || e));
+      // Lost the seat to someone else -> refresh so the taken seat disappears.
+      try { onClaimed(await openGroup(code)); } catch { /* keep the error shown */ }
+    }
     finally { setWorking(false); }
   };
   return (

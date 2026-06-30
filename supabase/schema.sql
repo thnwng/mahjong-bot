@@ -45,14 +45,26 @@ create table if not exists members (
   user_id     bigint not null,                       -- Telegram account id
   name        text,                                  -- the PLAYER SEAT this account claimed
   created_at  timestamptz not null default now(),
-  unique (tracker_id, user_id),                       -- one seat per account per group
-  unique (tracker_id, name)                           -- a seat is claimed by at most one account
+  unique (tracker_id, user_id)                        -- one seat per account per group
 );
 create index if not exists members_user_idx on members (user_id, created_at);
 alter table members enable row level security; -- no policies: only the Edge Function (service role) touches it
--- Migration: enforce one-account-per-seat + drop stale auto-join rows.
-delete from members;
-alter table members add constraint members_tracker_name_key unique (tracker_id, name);
+-- A seat is claimed by at most one account (named constraint = single source of truth).
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'members_tracker_name_key') then
+    alter table members add constraint members_tracker_name_key unique (tracker_id, name);
+  end if;
+end $$;
+
+-- Atomic, race-safe append of a player to trackers.players (no lost updates).
+-- Only the Edge Function (service role) may call it.
+create or replace function add_player(p_id uuid, p_name text) returns void
+  language sql security definer as $$
+    update trackers set players = players || to_jsonb(p_name)
+    where id = p_id and not (players ? p_name);
+  $$;
+revoke all on function add_player(uuid, text) from public, anon, authenticated;
+grant execute on function add_player(uuid, text) to service_role;
 
 alter table trackers enable row level security;
 alter table actions  enable row level security;

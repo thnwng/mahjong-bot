@@ -171,14 +171,19 @@ Deno.serve(async (req) => {
       } else if (op === "join-new") {
         const raw = String((body as { name?: string }).name || "").trim();
         if (!raw) return json({ error: "name required" }, 400);
-        const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
-        if (!players.includes(raw)) {
-          const { error: ue } = await sb.from("trackers").update({ players: [...players, raw] }).eq("id", tracker.id);
-          if (ue) throw ue;
-          tracker.players = [...players, raw];
-        }
+        // Claim the seat FIRST: if this fails (already joined, or name taken) we
+        // return 409 having touched nothing — no orphan player can be created.
         const { error: ie } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: raw });
         if (ie) return json({ error: ie.code === "23505" ? "you already joined this group, or that name is taken" : ie.message }, 409);
+        // Then ensure the player exists in the roster. add_player appends
+        // atomically (guarded by `not (players ? raw)`), so concurrent joins
+        // can't lose each other's seats.
+        const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
+        if (!players.includes(raw)) {
+          const { error: re } = await sb.rpc("add_player", { p_id: tracker.id, p_name: raw });
+          if (re) throw re;
+          tracker.players = [...players, raw];
+        }
       }
 
       const { data: actions, error: e3 } = await sb

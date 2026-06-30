@@ -79,6 +79,22 @@ async function announceGroup(chatId: number, name: string, by: string, code: str
   }
 }
 
+// Tell the bound Telegram group when an account claims a seat.
+// Best-effort: a failed post never blocks the join.
+async function announceJoin(chatId: number, nickname: string): Promise<void> {
+  const token = Deno.env.get("BOT_TOKEN");
+  if (!token || !chatId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: `${nickname} joined the group.` }),
+    });
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 // Which player seat each account has claimed in a group. Used to gate the
 // "Join Group" screen and greet the user by their seat.
 async function seatInfo(
@@ -162,12 +178,14 @@ Deno.serve(async (req) => {
       const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
       if (e1 || !tracker) return json({ error: "group not found" }, 404);
 
+      let joinedName: string | null = null; // set on a successful claim/join, then announced
       if (op === "claim") {
         const player = String((body as { player?: string }).player || "");
         const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
         if (!players.includes(player)) return json({ error: "no such player" }, 400);
         const { error: ce } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: player });
         if (ce) return json({ error: ce.code === "23505" ? "you already joined this group, or that player is taken" : ce.message }, 409);
+        joinedName = player;
       } else if (op === "join-new") {
         const raw = String((body as { name?: string }).name || "").trim();
         if (!raw) return json({ error: "name required" }, 400);
@@ -184,7 +202,12 @@ Deno.serve(async (req) => {
           if (re) throw re;
           tracker.players = [...players, raw];
         }
+        joinedName = raw;
       }
+
+      // Notify the bound Telegram group that this seat is now claimed.
+      const chatId = Number((tracker as { tg_chat_id?: number }).tg_chat_id);
+      if (joinedName && Number.isFinite(chatId) && chatId) await announceJoin(chatId, joinedName);
 
       const { data: actions, error: e3 } = await sb
         .from("actions").select().eq("tracker_id", tracker.id).order("created_at", { ascending: true });

@@ -42,7 +42,7 @@ const json = (body: unknown, status = 200) =>
 
 function openButton(param?: string) {
   const url = param ? `${APP_LINK}?startapp=${param}` : APP_LINK;
-  return { inline_keyboard: [[{ text: "Open Mahjong", url }]] };
+  return { inline_keyboard: [[{ text: "32fei no money", url }]] };
 }
 
 async function replyOpen(chatId: number, isGroup: boolean) {

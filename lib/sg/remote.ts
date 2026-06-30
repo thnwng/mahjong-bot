@@ -91,12 +91,17 @@ export function parseStartParam(): { tgChatId?: number; code?: string } {
   return { code: String(raw).toUpperCase() };
 }
 
-// "Your groups" — remembered per device so they appear on the home screen.
-const LS_GROUPS = "mahjong-groups";
+// "Your groups" cache — instant paint before the server responds. Keyed PER
+// TELEGRAM ACCOUNT so two accounts on the same phone/browser never share it.
+function cacheKey(): string {
+  const uid =
+    typeof window !== "undefined" ? window.Telegram?.WebApp?.initDataUnsafe?.user?.id : undefined;
+  return `mahjong-groups:${uid ?? "anon"}`;
+}
 export function localGroups(): GroupSummary[] {
   if (typeof window === "undefined") return [];
   try {
-    const v = JSON.parse(localStorage.getItem(LS_GROUPS) || "[]");
+    const v = JSON.parse(localStorage.getItem(cacheKey()) || "[]");
     return Array.isArray(v) ? v : [];
   } catch {
     return [];
@@ -105,16 +110,16 @@ export function localGroups(): GroupSummary[] {
 export function rememberGroup(g: GroupSummary): void {
   if (typeof window === "undefined") return;
   const list = [g, ...localGroups().filter((x) => x.code !== g.code)].slice(0, 50);
-  localStorage.setItem(LS_GROUPS, JSON.stringify(list));
+  localStorage.setItem(cacheKey(), JSON.stringify(list));
 }
 export function forgetGroup(code: string): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LS_GROUPS, JSON.stringify(localGroups().filter((x) => x.code !== code)));
+  localStorage.setItem(cacheKey(), JSON.stringify(localGroups().filter((x) => x.code !== code)));
 }
 /** Replace the cached group list (e.g. with the account's server-side groups). */
 export function setLocalGroups(list: GroupSummary[]): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LS_GROUPS, JSON.stringify(list.slice(0, 50)));
+  localStorage.setItem(cacheKey(), JSON.stringify(list.slice(0, 50)));
 }
 
 /** Bot username for building shareable deep links. Override via env if needed. */

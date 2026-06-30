@@ -55,7 +55,8 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   const [open, setOpen] = useState<TrackerState | null>(null);
   const [view, setView] = useState<"home" | "create" | "join">("home");
   const [tgChatId, setTgChatId] = useState<number | undefined>(undefined);
-  const [active, setActive] = useState<GroupSummary[]>([]);
+  const [active, setActive] = useState<GroupSummary[]>([]);   // groups THIS account is in
+  const [chatGroups, setChatGroups] = useState<GroupSummary[]>([]); // this chat's groups you can join
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -85,15 +86,18 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
         cid !== undefined ? listByChat(cid) : Promise.resolve({ groups: [] as GroupSummary[] }),
       ])
         .then(([mine, chat]) => {
-          // If both calls failed, keep the instant-painted cache untouched.
-          if (mine.status !== "fulfilled" && chat.status !== "fulfilled") return;
-          const a = mine.status === "fulfilled" ? mine.value.groups : [];
-          const b = chat.status === "fulfilled" ? chat.value.groups : [];
-          // Fold the on-device cache in at lowest priority so legacy/offline
-          // groups survive; backend (account, then chat) names/counts win.
-          const merged = mergeGroups([...localGroups(), ...a], b);
-          setActive(merged);
-          setLocalGroups(merged);
+          // "Your groups" = only the groups THIS account belongs to (server) +
+          // its per-account cache. Never folds in the chat's groups.
+          if (mine.status === "fulfilled") {
+            const yours = mergeGroups(localGroups(), mine.value.groups);
+            setActive(yours);
+            setLocalGroups(yours);
+          }
+          // The chat's groups you're NOT already in -> a separate "join" list.
+          if (chat.status === "fulfilled") {
+            const mineCodes = new Set(localGroups().map((g) => g.code));
+            setChatGroups(chat.value.groups.filter((g) => !mineCodes.has(g.code)));
+          }
         })
         .finally(() => setBooting(false));
       return;
@@ -104,8 +108,14 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   if (booting) return null;
 
   // Re-read the cache on returning home so a just-created/joined/opened group
-  // (rememberGroup updated the cache) shows up in "Your groups".
-  const goHome = () => { setOpen(null); setView("home"); setError(""); setActive(localGroups()); };
+  // shows in "Your groups" — and drops out of the chat's "to join" list.
+  const goHome = () => {
+    setOpen(null); setView("home"); setError("");
+    const yours = localGroups();
+    setActive(yours);
+    const codes = new Set(yours.map((g) => g.code));
+    setChatGroups((prev) => prev.filter((g) => !codes.has(g.code)));
+  };
   const openByCode = async (code: string) => {
     setBusy(true); setError("");
     try { const s = await openGroup(code); rememberGroup(sumOf(s)); setOpen(s); }
@@ -160,7 +170,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
       <h2>Your groups</h2>
       {active.length === 0 ? (
-        <p style={{ opacity: 0.7, fontSize: "0.9rem" }}>No groups yet — create one or join with a code.</p>
+        <p style={{ opacity: 0.7, fontSize: "0.9rem" }}>You haven&apos;t joined any groups yet.</p>
       ) : (
         <div className="balances">
           {active.map((g) => (
@@ -170,6 +180,21 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
             </div>
           ))}
         </div>
+      )}
+
+      {chatGroups.length > 0 && (
+        <>
+          <h2 style={{ marginBottom: 2 }}>In this chat</h2>
+          <p style={{ opacity: 0.6, fontSize: "0.78rem", marginTop: 0 }}>Tap to join — it&apos;ll be added to your groups.</p>
+          <div className="balances">
+            {chatGroups.map((g) => (
+              <div key={g.code} className="bal-row" style={{ cursor: "pointer" }} onClick={() => openByCode(g.code)}>
+                <span>{g.name || g.code}</span>
+                <span style={{ opacity: 0.55, fontSize: "0.8rem" }}>{g.code}{g.players ? ` · ${g.players}p` : ""}</span>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="choices" style={{ marginTop: 14 }}>

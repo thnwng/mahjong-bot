@@ -66,6 +66,17 @@ create or replace function add_player(p_id uuid, p_name text) returns void
 revoke all on function add_player(uuid, text) from public, anon, authenticated;
 grant execute on function add_player(uuid, text) to service_role;
 
+-- One global username per Telegram account, chosen on first use. Unique
+-- (case-insensitively). Independent of the per-group seat names in `members`.
+create table if not exists profiles (
+  user_id    bigint primary key,                  -- Telegram account id (from validated initData)
+  username   text not null,
+  created_at timestamptz not null default now()
+);
+-- Case-insensitive uniqueness via a functional index (no two "Bob"/"bob").
+create unique index if not exists profiles_username_lc_key on profiles (lower(username));
+alter table profiles enable row level security;   -- no policies: only the Edge Function (service role) touches it
+
 alter table trackers enable row level security;
 alter table actions  enable row level security;
 -- No policies on purpose: the anon key gets nothing. The Edge Function uses the

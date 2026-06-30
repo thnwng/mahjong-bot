@@ -56,6 +56,18 @@ export interface GroupSummary {
   players: number;
 }
 
+export interface Profile {
+  username: string;
+}
+
+/** This account's global username (null on first ever use) plus an available
+ *  suggestion to pre-fill the "pick a username" screen. */
+export const getMe = () => call<{ profile: Profile | null; suggested: string }>("me", {});
+
+/** Claim a unique username (first-time setup). Throws "that username is taken"
+ *  (409) if another account already has it. */
+export const setUsername = (username: string) => call<{ profile: Profile }>("set-username", { username });
+
 /** Create a group. If `tgChatId` is set (launched from a Telegram group), the
  *  group is bound to it and the bot posts a join button into that chat. */
 export const createTracker = (name: string, players: string[], bases: Tracker["bases"], tgChatId?: number) =>

@@ -95,6 +95,41 @@ async function announceJoin(chatId: number, nickname: string): Promise<void> {
   }
 }
 
+// Usernames: 3-20 chars, letters/digits/underscore. Stored as typed, unique
+// case-insensitively (functional index on lower(username)).
+const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
+
+// Strip a Telegram name down to a valid handle fragment ([a-z0-9_]). Folds
+// accents first so "José"->"jose", "Müller"->"muller" instead of being lost.
+function handleFragment(s: unknown): string {
+  return String(s ?? "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "") // drop combining diacritics
+    .toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 15);
+}
+
+// Suggest an AVAILABLE username derived from the user's Telegram handle (or
+// first name), appending a number if the base is taken. Always returns a
+// suggestion that passed a uniqueness check at call time.
+async function suggestUsername(
+  sb: ReturnType<typeof createClient>,
+  user: Record<string, unknown>,
+): Promise<string> {
+  let base = handleFragment(user.username) || handleFragment(user.first_name);
+  // Empty/too-short (emoji-only, CJK, etc.): seed a random "playerNNNN" so these
+  // users spread across the keyspace instead of all colliding on player2/3/…
+  if (base.length < 3) base = `player${Math.floor(1000 + Math.random() * 9000)}`;
+  // Pull existing handles sharing this prefix (escape LIKE metachars in base).
+  const likeBase = base.replace(/[\\%_]/g, "\\$&");
+  const { data } = await sb.from("profiles").select("username").ilike("username", `${likeBase}%`);
+  const taken = new Set((data || []).map((r) => String((r as { username: string }).username).toLowerCase()));
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 1000; i++) {
+    const cand = `${base}${i}`;
+    if (!taken.has(cand)) return cand;
+  }
+  return `${base}${Math.floor(Math.random() * 1e6)}`;
+}
+
 // Which player seat each account has claimed in a group. Used to gate the
 // "Join Group" screen and greet the user by their seat.
 async function seatInfo(
@@ -130,6 +165,37 @@ Deno.serve(async (req) => {
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   try {
+    if (op === "me") {
+      // The account's global username (null on first ever use) + an available
+      // suggestion to pre-fill the "pick a username" screen.
+      if (!userId) return json({ profile: null, suggested: "" });
+      const { data: p } = await sb.from("profiles").select("username").eq("user_id", userId).maybeSingle();
+      const username = p ? (p as { username: string }).username : null;
+      const suggested = username ?? (await suggestUsername(sb, user as Record<string, unknown>));
+      return json({ profile: username ? { username } : null, suggested });
+    }
+
+    if (op === "set-username") {
+      // Claim a unique username (first-time setup). Create-once: if this account
+      // already has one, return it unchanged.
+      if (!userId) return json({ error: "no account" }, 401);
+      const raw = String((body as { username?: string }).username || "").trim();
+      if (!USERNAME_RE.test(raw)) return json({ error: "username must be 3-20 letters, numbers or underscores" }, 400);
+      const { data: existing } = await sb.from("profiles").select("username").eq("user_id", userId).maybeSingle();
+      if (existing) return json({ profile: { username: (existing as { username: string }).username } });
+      const { error: ie } = await sb.from("profiles").insert({ user_id: userId, username: raw });
+      if (ie) {
+        if (ie.code === "23505") {
+          // Either we raced ourselves (PK) or the handle is taken (unique index).
+          const { data: now } = await sb.from("profiles").select("username").eq("user_id", userId).maybeSingle();
+          if (now) return json({ profile: { username: (now as { username: string }).username } });
+          return json({ error: "that username is taken" }, 409);
+        }
+        throw ie;
+      }
+      return json({ profile: { username: raw } });
+    }
+
     if (op === "create") {
       const { name, players, bases, tgChatId } = body as unknown as {
         name: string; players: string[]; bases: unknown; tgChatId?: number;

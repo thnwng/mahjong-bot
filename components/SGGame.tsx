@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { haptic, useBackButton, useClosingConfirmation } from "@/lib/telegram";
 import {
   Transfer,
   PayoutConfig,
@@ -225,6 +226,7 @@ function JoinForm({
   onBack: () => void;
   onJoined: (s: TrackerState) => void;
 }) {
+  useBackButton(onBack);
   const [code, setCode] = useState(initialCode || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -261,6 +263,7 @@ function JoinGroup({
   onClaimed: (s: TrackerState) => void;
   onBack: () => void;
 }) {
+  useBackButton(onBack);
   const code = state.tracker.code;
   const roster = new Set(state.tracker.players || []); // every seat name in this group
   const claimed = new Set(state.claimedNames || []);
@@ -280,8 +283,9 @@ function JoinGroup({
   const [err, setErr] = useState("");
   const run = async (fn: () => Promise<TrackerState>) => {
     setWorking(true); setErr("");
-    try { onClaimed(await fn()); }
+    try { onClaimed(await fn()); haptic("success"); }
     catch (e) {
+      haptic("error");
       setErr(String((e as Error).message || e));
       // Lost the seat to someone else -> refresh so the taken seat disappears.
       try { onClaimed(await openGroup(code)); } catch { /* keep the error shown */ }
@@ -346,8 +350,9 @@ function SyncPlay({ initial, onBack }: { initial: TrackerState; onBack: () => vo
   const record = async (summary: string, transfers: Transfer[], meta?: ActionMeta) => {
     busyRef.current = true; epochRef.current++;
     setSyncing(true);
-    try { setState(await addRemoteAction(code, summary, transfers, meta)); }
+    try { setState(await addRemoteAction(code, summary, transfers, meta)); haptic("success"); }
     catch (e) {
+      haptic("error");
       alert("Couldn't record: " + (e as Error).message);
       // The roster may have changed under us (e.g. a rename) -> refresh so the
       // user re-picks against the current seats.
@@ -366,8 +371,8 @@ function SyncPlay({ initial, onBack }: { initial: TrackerState; onBack: () => vo
     if (!nm || nm === state.me) { closeRename(); return; }
     busyRef.current = true; epochRef.current++;
     setRenameErr("");
-    try { setState(await renameSeat(code, nm)); closeRename(); }
-    catch (e) { setRenameErr(String((e as Error).message || e)); }
+    try { setState(await renameSeat(code, nm)); haptic("success"); closeRename(); }
+    catch (e) { haptic("error"); setRenameErr(String((e as Error).message || e)); }
     finally { busyRef.current = false; }
   };
 
@@ -428,6 +433,7 @@ function Setup({
   startLabel?: string;
   note?: string;
 }) {
+  useBackButton(onBack);
   const [name, setName] = useState("");
   const [names, setNames] = useState(["", "", "", ""]);
   // Payouts (per session). discard = what a single shooter pays at 1 tai;
@@ -606,7 +612,9 @@ function Dashboard({
   onBack: () => void;
   banner?: React.ReactNode;
 }) {
+  useBackButton(onBack);
   const [action, setAction] = useState<Action | null>(null);
+  const openAction = (a: Action) => { haptic("light"); setAction(a); };
 
   if (action) return <ActionForm action={action} players={players} bases={bases} onCancel={() => setAction(null)}
     onConfirm={(s, t, m) => { onRecord(s, t, m); setAction(null); }} />;
@@ -633,10 +641,10 @@ function Dashboard({
 
       <h2>Record action</h2>
       <div className="choices">
-        <div className="choice-btn" onClick={() => setAction("hu")}>Hu<small>win off discard</small></div>
-        <div className="choice-btn" onClick={() => setAction("zimo")}>Zimo<small>self-draw</small></div>
-        <div className="choice-btn" onClick={() => setAction("gang")}>Gang<small>kong</small></div>
-        <div className="choice-btn" onClick={() => setAction("yao")}>Yao<small>bite</small></div>
+        <div className="choice-btn" onClick={() => openAction("hu")}>Hu<small>win off discard</small></div>
+        <div className="choice-btn" onClick={() => openAction("zimo")}>Zimo<small>self-draw</small></div>
+        <div className="choice-btn" onClick={() => openAction("gang")}>Gang<small>kong</small></div>
+        <div className="choice-btn" onClick={() => openAction("yao")}>Yao<small>bite</small></div>
       </div>
 
       {log.length > 0 && (
@@ -661,7 +669,7 @@ function Chips({ options, value, onChange }: { options: { v: string; label: stri
   return (
     <div className="row">
       {options.map((o) => (
-        <div key={o.v} className={"chip" + (value === o.v ? " selected" : "")} onClick={() => onChange(o.v)}>{o.label}</div>
+        <div key={o.v} className={"chip" + (value === o.v ? " selected" : "")} onClick={() => { haptic("selection"); onChange(o.v); }}>{o.label}</div>
       ))}
     </div>
   );
@@ -680,6 +688,8 @@ function ActionForm({
   onCancel: () => void;
   onConfirm: (summary: string, transfers: Transfer[], meta: ActionMeta) => void;
 }) {
+  useBackButton(onCancel);            // native back cancels the half-entered hand
+  useClosingConfirmation(true);       // guard against losing it to an accidental close
   const playerOpts = players.map((p) => ({ v: p, label: p }));
   const tais = Array.from({ length: maxTaiOf(bases) }, (_, i) => i + 1);
   const [s, setS] = useState<Record<string, string>>({});

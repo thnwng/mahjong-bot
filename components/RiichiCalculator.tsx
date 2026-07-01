@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { haptic, useBackButton } from "@/lib/telegram";
 import { score } from "@/lib/riichi/scoring";
 import { YAKU, totalHan } from "@/lib/riichi/yaku";
 import ResultCard from "./ResultCard";
@@ -24,7 +25,7 @@ function Chips<T extends string | number>({
   return (
     <div className="row">
       {options.map((o) => (
-        <div key={String(o.v)} className={"chip" + (value === o.v ? " selected" : "")} onClick={() => onChange(o.v)}>
+        <div key={String(o.v)} className={"chip" + (value === o.v ? " selected" : "")} onClick={() => { haptic("selection"); onChange(o.v); }}>
           {o.label}
         </div>
       ))}
@@ -33,6 +34,7 @@ function Chips<T extends string | number>({
 }
 
 export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
+  useBackButton(onBack);
   const [mode, setMode] = useState<Mode>("tiles");
   const [tsumo, setTsumo] = useState(false);
   const [players, setPlayers] = useState<3 | 4>(4);
@@ -81,7 +83,7 @@ export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
 
       <div className="row" style={{ marginBottom: 8 }}>
         {(["tiles", "manual", "yaku"] as Mode[]).map((m) => (
-          <div key={m} className={"chip" + (mode === m ? " selected" : "")} onClick={() => setMode(m)}>
+          <div key={m} className={"chip" + (mode === m ? " selected" : "")} onClick={() => { haptic("selection"); setMode(m); }}>
             {m === "tiles" ? "Pick tiles" : m === "manual" ? "Han + Fu" : "Pick yaku"}
           </div>
         ))}
@@ -143,7 +145,7 @@ export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
               <h2>Yaku</h2>
               <div className="row">
                 {YAKU.filter((y) => closed || y.openHan !== null).map((y) => (
-                  <div key={y.key} className={"chip" + (picked.has(y.key) ? " on" : "")} onClick={() => toggleYaku(y.key)} title={y.en}>
+                  <div key={y.key} className={"chip" + (picked.has(y.key) ? " on" : "")} onClick={() => { haptic("selection"); toggleYaku(y.key); }} title={y.en}>
                     {y.name} {closed ? y.closedHan : y.openHan}
                   </div>
                 ))}

@@ -97,6 +97,9 @@ export function settleGang(
   return players.filter((p) => p !== konger).map((p) => ({ payer: p, payee: konger, amount }));
 }
 
+/** Format a money amount the way the whole app displays it. */
+export const money = (n: number) => n.toFixed(2);
+
 export function applyTransfers(balances: Record<string, number>, transfers: Transfer[]): void {
   for (const t of transfers) {
     balances[t.payer] = (balances[t.payer] || 0) - t.amount;

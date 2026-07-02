@@ -5,6 +5,15 @@ whole codebase. Workspace-wide rules distilled from this review live in
 `E:\Claude\telegram-mini-app-standard.md`. Items are phased by payoff-per-effort;
 each was kept only if it fixes a pain this project actually hit.
 
+## Status (updated 2026-07-02, same day)
+
+- **DONE — Phase 1**: items 1, 2, 4, 5, 6, 7, 8, 9 all shipped. Item 3 (CI
+  function deploys) is committed and wired but needs the one-time
+  `SUPABASE_ACCESS_TOKEN` repo secret before the deploy step passes.
+- **DONE — Phase 2**: items 11 (bundled with the record-action wizard rebuild:
+  `components/sg/` split + union `Screen`), 12, 13, 14.
+- **OPEN**: item 10 (numbered migrations) and all of Phase 3 (trigger-gated).
+
 ## Phase 1 — do next (two security fixes + self-enforcing guardrails)
 
 1. **[SECURITY] Close the `setup-group` hole** (`supabase/functions/track/index.ts`).

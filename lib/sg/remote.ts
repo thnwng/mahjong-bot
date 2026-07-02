@@ -69,6 +69,11 @@ export interface Profile {
   username: string;
 }
 
+/** The one client-side copy of the username rule (the server enforces the same
+ *  regex — keep in sync with USERNAME_RE in supabase/functions/track/index.ts). */
+export const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
+export const USERNAME_HINT = "3–20 letters, numbers or underscores.";
+
 /** This account's global username (null on first ever use) + an available
  *  suggestion to pre-fill the "pick a username" gate. `hasHandle` is false when
  *  the account has no Telegram @username (so the UI asks them to make one). */
@@ -105,10 +110,6 @@ export const joinNew = (code: string, name: string) => call<TrackerState>("join-
 
 /** Every group this Telegram account belongs to (any device). */
 export const myGroups = () => call<{ groups: GroupSummary[] }>("my-groups", {});
-
-/** Fill in a bot-created group stub (code already exists, players still empty). */
-export const setupGroup = (code: string, name: string, players: string[], bases: Tracker["bases"]) =>
-  call<TrackerState>("setup-group", { code, name, players, bases });
 
 export const getState = (code: string) => call<TrackerState>("state", { code });
 

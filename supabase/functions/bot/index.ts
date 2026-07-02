@@ -14,7 +14,9 @@
 // and it calls Telegram's setWebhook (pointing back here, with a secret header)
 // and setMyCommands (so the commands button shows) using the BOT_TOKEN secret.
 //
-// Deploy (dashboard editor, like `track`): paste this, Verify-JWT OFF.
+// Deploys automatically from git via .github/workflows/deploy-functions.yml
+// (verify_jwt=false comes from supabase/config.toml). Do NOT paste-deploy from
+// the dashboard — if code isn't in git, it isn't deployed.
 // Secrets needed: BOT_TOKEN (already set), WEBHOOK_SECRET (any random string).
 // (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY are injected automatically.)
 
@@ -134,7 +136,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ ok: true, hint: "Telegram webhook endpoint" });
 
   // Telegram authenticity: it echoes our secret token in this header.
-  if (WEBHOOK_SECRET && req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
+  // FAIL CLOSED: a missing WEBHOOK_SECRET rejects everything (an unset secret
+  // must never silently accept forged updates that can post as the bot).
+  if (!WEBHOOK_SECRET || req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
     return json({ error: "unauthorized" }, 401);
   }
 

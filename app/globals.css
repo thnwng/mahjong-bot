@@ -1,11 +1,33 @@
 :root {
   color-scheme: light dark;
-  --bg: var(--tg-theme-bg-color, #ffffff);
-  --text: var(--tg-theme-text-color, #111111);
-  --hint: var(--tg-theme-hint-color, #888888);
-  --secondary-bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
+  /* Plain-browser fallbacks. Inside Telegram the --tg-theme-* vars are set (and
+     live-updated on theme change), so they always win over the fallbacks. */
+  --bg-fallback: #ffffff;
+  --text-fallback: #111111;
+  --hint-fallback: #888888;
+  --secondary-bg-fallback: #f1f1f4;
+  --bg: var(--tg-theme-bg-color, var(--bg-fallback));
+  --text: var(--tg-theme-text-color, var(--text-fallback));
+  --hint: var(--tg-theme-hint-color, var(--hint-fallback));
+  --secondary-bg: var(--tg-theme-secondary-bg-color, var(--secondary-bg-fallback));
   --button: var(--tg-theme-button-color, #2ea6ff);
   --button-text: var(--tg-theme-button-text-color, #ffffff);
+  /* Money / status colors */
+  --pos: #1f9d55;
+  --neg: #e54848;
+  /* iPhone home-indicator (and similar) inset; Telegram sets its own var. */
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-fallback: #1c1c1e;
+    --text-fallback: #f2f2f6;
+    --hint-fallback: #98989e;
+    --secondary-bg-fallback: #2c2c2e;
+    --pos: #34c47c;
+    --neg: #ff6b6b;
+  }
 }
 
 * {
@@ -17,7 +39,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
-  padding: 14px 14px 96px;
+  padding: 14px 14px calc(96px + var(--safe-bottom));
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -89,10 +111,10 @@ small {
   font-weight: 400;
 }
 
-/* Primary action button, fixed to the bottom */
+/* Primary action button, fixed to the bottom (padded above the home indicator) */
 .primary-btn {
   position: fixed;
-  bottom: 16px;
+  bottom: calc(16px + var(--safe-bottom));
   left: 14px;
   right: 14px;
   padding: 15px;
@@ -169,11 +191,17 @@ small {
 }
 
 .bal.pos {
-  color: #1f9d55;
+  color: var(--pos);
 }
 
 .bal.neg {
-  color: #e54848;
+  color: var(--neg);
+}
+
+/* Inline error text */
+.err {
+  color: var(--neg);
+  font-size: 0.85rem;
 }
 
 .log {
@@ -241,11 +269,49 @@ small {
   height: 16px;
   padding: 0 3px;
   border-radius: 8px;
-  background: #e54848;
+  background: var(--neg);
   color: #fff;
   font-size: 0.65rem;
   line-height: 16px;
   text-align: center;
+}
+
+/* Step wizard (record action): one question per screen */
+.wizard-crumb {
+  font-size: 0.85rem;
+  color: var(--hint);
+  margin: 0 0 2px;
+  line-height: 1.5;
+}
+
+.wizard-crumb strong {
+  color: var(--text);
+}
+
+.num-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.num-btn {
+  padding: 11px 0;
+  border: 1px solid var(--hint);
+  border-radius: 11px;
+  background: var(--secondary-bg);
+  color: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.num-btn small {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 400;
+  margin-top: 2px;
 }
 
 /* Declared meld rows */

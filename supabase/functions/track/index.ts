@@ -1,5 +1,7 @@
 // Supabase Edge Function: group-synced mahjong trackers.
-// Deploy:  supabase functions deploy track --no-verify-jwt
+// Deploys automatically from git via .github/workflows/deploy-functions.yml
+// (verify_jwt=false comes from supabase/config.toml). Do NOT paste-deploy from
+// the dashboard — if code isn't in git, it isn't deployed.
 // Secrets: supabase secrets set BOT_TOKEN=<your bot token>
 //          (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically)
 //
@@ -7,7 +9,16 @@
 // Telegram initData (HMAC with the bot token) on every call, then use the
 // service role to touch the DB. No DB keys are ever exposed to the client.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Pinned exact version: an esm.sh-side bump of a floating "@2" could change
+// the resolved types and turn the CI `deno check` gate red with no code change.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.0";
+
+// The concrete client instance type (what createClient(url, key) returns), for
+// typing helpers that take the client. `ReturnType<typeof createClient>` would
+// resolve the UN-instantiated generic defaults instead and fail deno check.
+const makeClient = () =>
+  createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+type SB = ReturnType<typeof makeClient>;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -22,7 +33,7 @@ function toHex(buf: ArrayBuffer): string {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function hmac(key: ArrayBuffer | Uint8Array, msg: Uint8Array): Promise<ArrayBuffer> {
+async function hmac(key: BufferSource, msg: BufferSource): Promise<ArrayBuffer> {
   const k = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return crypto.subtle.sign("HMAC", k, msg);
 }
@@ -98,7 +109,7 @@ async function announceJoin(chatId: number, nickname: string): Promise<void> {
 // Which player seat each account has claimed in a group. Used to gate the
 // "Join Group" screen and greet the user by their seat.
 async function seatInfo(
-  sb: ReturnType<typeof createClient>,
+  sb: SB,
   trackerId: string,
   userId: number,
 ): Promise<{ me: string | null; claimedNames: string[] }> {
@@ -113,6 +124,7 @@ async function seatInfo(
 // --- Usernames (one global handle per Telegram account) ----------------------
 // 3-20 chars, letters/digits/underscore; unique case-insensitively (functional
 // index on lower(username)).
+// Keep in sync with USERNAME_RE in lib/sg/remote.ts (the client copy).
 const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
 
 // Strip a Telegram name to a valid handle fragment ([a-z0-9_]). Folds accents
@@ -125,7 +137,7 @@ function handleFragment(s: unknown): string {
 
 // The account that owns `name` (case-insensitively), or null if free. Escapes
 // LIKE metacharacters so an underscore in the handle isn't treated as a wildcard.
-async function usernameOwner(sb: ReturnType<typeof createClient>, name: string): Promise<number | null> {
+async function usernameOwner(sb: SB, name: string): Promise<number | null> {
   const esc = name.replace(/[\\%_]/g, "\\$&");
   const { data } = await sb.from("profiles").select("user_id,username").ilike("username", esc);
   const row = (data || []).find((r) => String((r as { username: string }).username).toLowerCase() === name.toLowerCase());
@@ -134,7 +146,7 @@ async function usernameOwner(sb: ReturnType<typeof createClient>, name: string):
 
 // Suggest an AVAILABLE username from the user's Telegram handle (or first name),
 // appending a number if the base is taken.
-async function suggestUsername(sb: ReturnType<typeof createClient>, user: Record<string, unknown>): Promise<string> {
+async function suggestUsername(sb: SB, user: Record<string, unknown>): Promise<string> {
   let base = handleFragment(user.username) || handleFragment(user.first_name);
   if (base.length < 3) base = `player${Math.floor(1000 + Math.random() * 9000)}`;
   const likeBase = base.replace(/[\\%_]/g, "\\$&");
@@ -162,7 +174,7 @@ Deno.serve(async (req) => {
   const actioner = String(user.first_name || user.username || user.id || "?");
   const userId = Number((user as { id?: number }).id) || 0; // Telegram account id
 
-  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const sb = makeClient();
 
   try {
     if (op === "me") {
@@ -230,7 +242,10 @@ Deno.serve(async (req) => {
         const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
         if (players.includes(newName)) return json({ error: "that name is taken in this group" }, 409);
         const { error: re } = await sb.rpc("rename_player", { p_id: tracker.id, p_user: userId, p_old: oldName, p_new: newName });
-        if (re) return json({ error: re.code === "23505" ? "that name is taken in this group" : re.message }, re.code === "23505" ? 409 : 500);
+        if (re) {
+          if (re.code === "23505") return json({ error: "that name is taken in this group" }, 409);
+          throw re;
+        }
       }
       const { data: t2 } = await sb.from("trackers").select().eq("code", code).single();
       const { data: actions, error: e3 } = await sb
@@ -295,7 +310,10 @@ Deno.serve(async (req) => {
         const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
         if (!players.includes(player)) return json({ error: "no such player" }, 400);
         const { error: ce } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: player });
-        if (ce) return json({ error: ce.code === "23505" ? "you already joined this group, or that player is taken" : ce.message }, 409);
+        if (ce) {
+          if (ce.code === "23505") return json({ error: "you already joined this group, or that player is taken" }, 409);
+          throw ce;
+        }
         joinedName = player;
       } else if (op === "join-new") {
         const raw = String((body as { name?: string }).name || "").trim();
@@ -305,7 +323,10 @@ Deno.serve(async (req) => {
         // Claim the seat FIRST: if this fails (already joined, or name taken) we
         // return 409 having touched nothing — no orphan player can be created.
         const { error: ie } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: raw });
-        if (ie) return json({ error: ie.code === "23505" ? "you already joined this group, or that name is taken" : ie.message }, 409);
+        if (ie) {
+          if (ie.code === "23505") return json({ error: "you already joined this group, or that name is taken" }, 409);
+          throw ie;
+        }
         // Then ensure the player exists in the roster. add_player appends
         // atomically (guarded by `not (players ? raw)`), so concurrent joins
         // can't lose each other's seats.
@@ -338,26 +359,16 @@ Deno.serve(async (req) => {
         .order("created_at", { ascending: false });
       if (error) throw error;
       const groups = (data || [])
-        .map((m) => (m as { trackers: { code: string; name: string; players: string[] } | null }).trackers)
+        .map((m) => (m as unknown as { trackers: { code: string; name: string; players: string[] } | null }).trackers)
         .filter((t) => t && Array.isArray(t.players) && t.players.length >= 2)
         .map((t) => ({ code: t!.code, name: t!.name, players: t!.players.length }));
       return json({ groups });
     }
 
-    if (op === "setup-group") {
-      // Fill in an existing (bot-created) group stub: name + players + bases.
-      const code = String((body as { code?: string }).code || "").toUpperCase();
-      const { name, players, bases } = body as unknown as { name: string; players: string[]; bases: unknown };
-      if (!name || !Array.isArray(players) || players.length < 2) return json({ error: "name + >=2 players required" }, 400);
-      const { data: tracker, error: e1 } = await sb
-        .from("trackers")
-        .update({ name, players, bases })
-        .eq("code", code)
-        .select()
-        .single();
-      if (e1 || !tracker) return json({ error: "group not found" }, 404);
-      return json({ tracker, actions: [], me: null, claimedNames: [] });
-    }
+    // NOTE: the old "setup-group" op was removed 2026-07-02 — it let anyone with
+    // a group code overwrite a live group's roster/stakes with no auth and no
+    // stub-state precondition. Nothing in the client calls it. Do not re-add it
+    // without a userId check AND a "players is still empty" WHERE clause.
 
     if (op === "state" || op === "action") {
       const code = String((body as { code?: string }).code || "").toUpperCase();
@@ -389,6 +400,9 @@ Deno.serve(async (req) => {
 
     return json({ error: `unknown op: ${op}` }, 400);
   } catch (e) {
-    return json({ error: String((e as Error).message || e) }, 500);
+    // Client-visible errors are hand-written sentences; the real error goes to
+    // the function logs only (never leak Postgres/table details to users).
+    console.error(`track op=${op} failed:`, (e as Error)?.message || e);
+    return json({ error: "something went wrong — please try again" }, 500);
   }
 });

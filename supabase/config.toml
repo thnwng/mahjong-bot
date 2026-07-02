@@ -1,0 +1,12 @@
+# Supabase project config, committed so CLI/CI deploys keep the right settings.
+# Both functions do their own auth (Telegram initData HMAC / webhook secret
+# header), so Supabase's JWT check must stay OFF — a CLI deploy without this
+# file would silently re-enable it and break the app.
+
+project_id = "mahjong-web"
+
+[functions.track]
+verify_jwt = false
+
+[functions.bot]
+verify_jwt = false

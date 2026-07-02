@@ -21,15 +21,16 @@ keys are shipped in the app.
 
 4. **Set the bot token secret** (used to validate initData):
    ```
-   supabase secrets set BOT_TOKEN=8708366926:AAF...   # @jpgmahjongbot token
+   supabase secrets set BOT_TOKEN=<your-bot-token-from-BotFather>
    ```
    (`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically.)
 
-5. **Deploy the function** (public — it does its own initData auth):
-   ```
-   supabase functions deploy track --no-verify-jwt
-   ```
-   This prints the function URL, e.g.
+5. **Functions deploy from git.** Add the repo secret `SUPABASE_ACCESS_TOKEN`
+   (supabase.com → account Settings → Access Tokens), and every push to `main`
+   that touches `supabase/` deploys `track` + `bot` via
+   `.github/workflows/deploy-functions.yml` (type-checked first; JWT settings
+   come from `supabase/config.toml`). Never paste code into the dashboard
+   editor. The function URL is
    `https://<ref>.supabase.co/functions/v1/track`.
 
 6. **Tell the app the URL**: in the GitHub repo →
@@ -50,11 +51,12 @@ mahjong group (a row in `trackers` keyed by `tg_chat_id`).
 1. **Schema**: re-run [`supabase/schema.sql`](supabase/schema.sql) (it adds the
    `tg_chat_id` column and relaxes the `name`/`players` defaults so the bot can
    create blank group stubs).
-2. **Deploy** the `bot` function (dashboard → Edge Functions → Deploy a new
-   function → Via Editor → paste, name it `bot`) and turn **Verify JWT OFF** in
-   its Settings (Telegram sends no JWT).
+2. **Deploy**: the `bot` function ships from git with `track` (see step 5
+   above); `verify_jwt = false` is set in `supabase/config.toml` (Telegram
+   sends no JWT).
 3. **Secret**: add `WEBHOOK_SECRET` (any random string) in Edge Function Secrets.
-   `BOT_TOKEN` is reused from the synced-tracker setup above.
+   `BOT_TOKEN` is reused from the synced-tracker setup above. The webhook check
+   fails closed: with no secret set, all updates are rejected.
 4. **Register** the webhook + commands in one shot — open this once in a browser:
    `https://<ref>.supabase.co/functions/v1/bot?action=setup&secret=<WEBHOOK_SECRET>`
    It calls Telegram's `setWebhook` (pointing back at the `bot` function, with

@@ -1,0 +1,20 @@
+{
+  "version": "5",
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.110.0": "b99c0ce7729f9de7797f836b93ab9ec94f1cfe079b4f937fa4144fe13525e979"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@types/node@20",
+        "npm:@types/react-dom@19",
+        "npm:@types/react@19",
+        "npm:next@15.2.0",
+        "npm:react-dom@19",
+        "npm:react@19",
+        "npm:typescript@5",
+        "npm:vitest@3"
+      ]
+    }
+  }
+}

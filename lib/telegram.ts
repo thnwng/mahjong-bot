@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// DECISION (2026-07-02, reviewed): this hand-rolled wrapper over the CDN
+// telegram-web-app.js IS the app's Telegram integration. Do NOT migrate to
+// @telegram-apps/sdk-react — it has breaking major-version churn and wouldn't
+// replace the hard part here (the back-button handler stack) anyway. Revisit
+// only if a needed feature falls outside this wrapper (CloudStorage,
+// biometrics, fullscreen, secondary button).
+//
 // Minimal typing for the bits of the Telegram WebApp SDK we use. These are all
 // methods exposed by the official telegram-web-app.js the app already loads —
 // no extra dependency. Everything is optional so calls degrade gracefully when

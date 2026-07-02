@@ -233,7 +233,7 @@ export default function TilesMode({
               </span>
             )}
             {bld.codes.length === bld.target && (
-              <span style={{ fontSize: "0.78rem", color: bldKind ? "var(--button)" : "#e54848" }}>
+              <span style={{ fontSize: "0.78rem", color: bldKind ? "var(--button)" : "var(--neg)" }}>
                 → {bldKind ?? "invalid — try different tiles"}
               </span>
             )}

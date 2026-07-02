@@ -24,6 +24,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Engine tests (payout + scoring money math)
+        run: npm test
       - name: Build static export
         run: npm run build
         env:

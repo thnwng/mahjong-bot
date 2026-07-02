@@ -111,6 +111,13 @@ small {
   font-weight: 400;
 }
 
+/* Multi-select variant (game-type checklist) */
+.choice-btn.selected-choice {
+  background: var(--button);
+  color: var(--button-text);
+  border-color: transparent;
+}
+
 /* Primary action button, fixed to the bottom (padded above the home indicator) */
 .primary-btn {
   position: fixed;

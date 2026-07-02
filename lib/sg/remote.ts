@@ -14,6 +14,19 @@ export interface Tracker {
   name: string;
   players: string[];
   bases: PayoutConfig;
+  default_type?: string; // what this group usually plays ('sg4' | 'my3')
+}
+
+// One sitting at the table. Money tallies per session; ended sessions feed the
+// group's running debt counter. Auto-ends 24h after start (server-enforced).
+export interface Session {
+  id: string;
+  mahjong_type: string;              // 'sg4' | 'my3' (my3 = WIP)
+  bases: PayoutConfig | null;
+  settle: boolean;                   // false = "ownself settle" (no payout tracking)
+  started_by?: string | null;
+  started_at: string;
+  ended_at?: string | null;
 }
 
 // Structured action so the log can render CURRENT seat names (rename rewrites
@@ -35,7 +48,9 @@ export interface RemoteAction {
 
 export interface TrackerState {
   tracker: Tracker;
-  actions: RemoteAction[];
+  actions: RemoteAction[];   // the ACTIVE session's actions ([] when no session)
+  session?: Session | null;  // the active session, if one is running
+  debts?: Record<string, number>; // net per player from everything already ended
   me?: string | null;        // the player seat THIS account has claimed (null = not joined yet)
   claimedNames?: string[];   // seats already taken (so the join screen can hide them)
 }
@@ -63,10 +78,30 @@ export interface GroupSummary {
   code: string;
   name: string;
   players: number;
+  myName?: string | null;    // your seat in this group
+  myNet?: number;            // your net balance there (all sessions)
+  lastActivity?: string;     // ISO time of the last recorded action
+  hasActive?: boolean;       // a session is currently running
+}
+
+// The mahjong types the app knows about (first-run checklist / home dropdown).
+// Keep in sync with GAME_TYPES in supabase/functions/track/index.ts.
+export type GameType = "sg4" | "my3" | "riichi";
+export const GAME_TYPES: { v: GameType; label: string; wip?: boolean }[] = [
+  { v: "sg4", label: "Singaporean (4 player)" },
+  { v: "my3", label: "Malaysian (3 player)", wip: true },
+  { v: "riichi", label: "Riichi (hand calculator)" },
+];
+
+export interface PayoutPreset {
+  name: string;
+  cfg: PayoutConfig;
 }
 
 export interface Profile {
   username: string;
+  gameTypes?: GameType[] | null; // null = first-run checklist not done yet
+  presets?: PayoutPreset[];      // saved payout presets
 }
 
 /** The one client-side copy of the username rule (the server enforces the same
@@ -84,15 +119,30 @@ export const getMe = () =>
  *  taken" (409) if another account already has it. */
 export const setUsername = (username: string) => call<{ profile: Profile }>("set-username", { username });
 
+/** Save which mahjong types this account plays (first-run checklist / settings). */
+export const setPrefs = (gameTypes: GameType[]) => call<{ gameTypes: GameType[] }>("set-prefs", { gameTypes });
+
+/** Save (or overwrite by name) a payout preset on this account. */
+export const savePreset = (name: string, cfg: PayoutConfig) =>
+  call<{ presets: PayoutPreset[] }>("save-preset", { name, cfg });
+
+/** Start a session in a group (409 if one is already running). */
+export const startSession = (code: string, opts: { mahjongType: string; settle: boolean; bases?: PayoutConfig }) =>
+  call<TrackerState>("start-session", { code, ...opts });
+
+/** End the group's active session; its actions freeze into the debt counter. */
+export const endSession = (code: string) => call<TrackerState>("end-session", { code });
+
 /** Rename your own seat in a group (your per-group display name). Rewrites the
  *  roster + past transfers server-side so balances stay correct. Throws "that
  *  name is taken in this group" (409) if another seat already uses it. */
 export const renameSeat = (code: string, name: string) => call<TrackerState>("rename-seat", { code, name });
 
 /** Create a group. If `tgChatId` is set (launched from a Telegram group), the
- *  group is bound to it and the bot posts a join button into that chat. */
-export const createTracker = (name: string, players: string[], bases: Tracker["bases"], tgChatId?: number) =>
-  call<TrackerState>("create", { name, players, bases, tgChatId });
+ *  group is bound to it and the bot posts a join button into that chat.
+ *  `defaultType` = what the group usually plays (prefills each session). */
+export const createTracker = (name: string, players: string[], bases: Tracker["bases"], tgChatId?: number, defaultType?: GameType) =>
+  call<TrackerState>("create", { name, players, bases, tgChatId, defaultType });
 
 /** Groups bound to a Telegram group (so members can see + join them). */
 export const listByChat = (tgChatId: number) =>
@@ -113,8 +163,11 @@ export const myGroups = () => call<{ groups: GroupSummary[] }>("my-groups", {});
 
 export const getState = (code: string) => call<TrackerState>("state", { code });
 
-export const addRemoteAction = (code: string, summary: string, transfers: Transfer[], meta?: ActionMeta) =>
-  call<TrackerState>("action", { code, summary, transfers, meta });
+/** Record an action. `sessionId` echoes the session the money was computed
+ *  against — the server 409s if it changed, so amounts computed under old
+ *  rules can never land in a different session. */
+export const addRemoteAction = (code: string, summary: string, transfers: Transfer[], meta?: ActionMeta, sessionId?: string) =>
+  call<TrackerState>("action", { code, summary, transfers, meta, sessionId });
 
 /** Parse the launch deep-link param Telegram passes via ?startapp=<x>:
  *  - `g<chatId>` (lowercase g) → opened from a Telegram group; returns its id.

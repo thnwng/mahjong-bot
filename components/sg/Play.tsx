@@ -22,7 +22,7 @@ import {
   settleGang,
   applyTransfers,
 } from "@/lib/sg/payout";
-import { getState, addRemoteAction, renameSeat, TrackerState, ActionMeta, BOT_APP_LINK } from "@/lib/sg/remote";
+import { getState, addRemoteAction, renameSeat, endSession, TrackerState, ActionMeta, BOT_APP_LINK } from "@/lib/sg/remote";
 
 type LogEntry = { summary: string; transfers: Transfer[]; actioner?: string; meta?: ActionMeta | null };
 
@@ -33,8 +33,8 @@ function renderLogLine(e: LogEntry): string {
   const m = e.meta;
   if (!m) return e.summary;
   switch (m.k) {
-    case "hu": return `Hu: ${m.winner} wins off ${m.discarder} (${m.tai} tai)`;
-    case "zimo": return `Zimo: ${m.winner} self-draws (${m.tai} tai)`;
+    case "hu": return `Hu: ${m.winner} wins off ${m.discarder}${m.tai ? ` (${m.tai} tai)` : ""}`;
+    case "zimo": return `Zimo: ${m.winner} self-draws${m.tai ? ` (${m.tai} tai)` : ""}`;
     case "gang": return `Gang: ${m.konger} kong${m.payer ? ` off ${m.payer}` : " (all pay)"}`;
     case "yao": return `Yao: ${m.biter} bite${m.target ? ` on ${m.target}` : " (all pay)"}`;
     default: return e.summary;
@@ -71,7 +71,7 @@ type StepDef = {
 // depend on earlier answers (a discarder list excludes the winner; the
 // "whose discard" step only exists when one person pays), so this recomputes
 // each render — going back re-derives everything consistently.
-function stepsFor(action: Action, picks: Record<string, string>, players: string[], bases: PayoutConfig): StepDef[] {
+function stepsFor(action: Action, picks: Record<string, string>, players: string[], bases: PayoutConfig, settle: boolean): StepDef[] {
   const people = (exclude?: string): Opt[] =>
     players.filter((p) => p !== exclude).map((p) => ({ v: p, label: p }));
   const taiOpts = (value: (n: number) => string): Opt[] =>
@@ -81,13 +81,14 @@ function stepsFor(action: Action, picks: Record<string, string>, players: string
     return [
       { key: "winner", title: "Who won?", kind: "people", options: people(), crumb: (v) => v },
       { key: "discarder", title: "Off whose discard?", kind: "people", options: people(picks.winner), crumb: (v) => `off ${v}` },
-      { key: "tai", title: "How many tai?", kind: "nums", options: taiOpts((n) => money(discardValue(bases, n))), crumb: (v) => `${v} tai` },
+      // No-payout sessions just log the win — tai doesn't matter.
+      ...(settle ? [{ key: "tai", title: "How many tai?", kind: "nums", options: taiOpts((n) => money(discardValue(bases, n))), crumb: (v: string) => `${v} tai` } as StepDef] : []),
     ];
   }
   if (action === "zimo") {
     return [
       { key: "winner", title: "Who self-drew?", kind: "people", options: people(), crumb: (v) => v },
-      { key: "tai", title: "How many tai?", kind: "nums", options: taiOpts((n) => `${money(zimoEachValue(bases, n))} each`), crumb: (v) => `${v} tai` },
+      ...(settle ? [{ key: "tai", title: "How many tai?", kind: "nums", options: taiOpts((n) => `${money(zimoEachValue(bases, n))} each`), crumb: (v: string) => `${v} tai` } as StepDef] : []),
     ];
   }
   if (action === "gang") {
@@ -130,20 +131,21 @@ function buildResult(
   picks: Record<string, string>,
   players: string[],
   bases: PayoutConfig,
+  settle: boolean,
 ): { summary: string; transfers: Transfer[]; meta: ActionMeta } {
   if (action === "hu") {
-    const tai = parseInt(picks.tai);
+    const tai = settle ? parseInt(picks.tai) : 0;
     return {
-      summary: `Hu: ${picks.winner} wins off ${picks.discarder} (${tai} tai)`,
-      transfers: settleDiscardWin(picks.winner, picks.discarder, discardValue(bases, tai)),
+      summary: `Hu: ${picks.winner} wins off ${picks.discarder}${tai ? ` (${tai} tai)` : ""}`,
+      transfers: settle ? settleDiscardWin(picks.winner, picks.discarder, discardValue(bases, tai)) : [],
       meta: { k: "hu", tai, winner: picks.winner, discarder: picks.discarder },
     };
   }
   if (action === "zimo") {
-    const tai = parseInt(picks.tai);
+    const tai = settle ? parseInt(picks.tai) : 0;
     return {
-      summary: `Zimo: ${picks.winner} self-draws (${tai} tai)`,
-      transfers: settleSelfDraw(picks.winner, zimoEachValue(bases, tai), players),
+      summary: `Zimo: ${picks.winner} self-draws${tai ? ` (${tai} tai)` : ""}`,
+      transfers: settle ? settleSelfDraw(picks.winner, zimoEachValue(bases, tai), players) : [],
       meta: { k: "zimo", tai, winner: picks.winner },
     };
   }
@@ -167,18 +169,20 @@ function ActionWizard({
   action,
   players,
   bases,
+  settle,
   onCancel,
   onConfirm,
 }: {
   action: Action;
   players: string[];
   bases: PayoutConfig;
+  settle: boolean;
   onCancel: () => void;
   onConfirm: (summary: string, transfers: Transfer[], meta: ActionMeta) => void;
 }) {
   useClosingConfirmation(true); // guard the half-entered action against an accidental close
   const [picks, setPicks] = useState<Record<string, string>>({});
-  const steps = stepsFor(action, picks, players, bases);
+  const steps = stepsFor(action, picks, players, bases, settle);
   const answered = steps.filter((st) => picks[st.key] !== undefined);
   const current = steps.find((st) => picks[st.key] === undefined) ?? null; // null -> confirm screen
 
@@ -203,7 +207,7 @@ function ActionWizard({
   );
 
   if (!current) {
-    const r = buildResult(action, picks, players, bases);
+    const r = buildResult(action, picks, players, bases, settle);
     return (
       <div>
         {head}
@@ -213,6 +217,7 @@ function ActionWizard({
           {r.transfers.map((t, i) => (
             <div key={i} className="line">{t.payer} pays {t.payee} <strong>{money(t.amount)}</strong></div>
           ))}
+          {!settle && <div className="line" style={{ opacity: 0.7, fontSize: "0.85rem" }}>Log only — no payouts in this session.</div>}
         </div>
         <button className="primary-btn" onClick={() => onConfirm(r.summary, r.transfers, r.meta)}>
           Record {ACTION_TITLES[action].title}
@@ -255,6 +260,8 @@ function ActionWizard({
 function Dashboard({
   players,
   bases,
+  settle,
+  title,
   balances,
   log,
   recordError,
@@ -264,6 +271,8 @@ function Dashboard({
 }: {
   players: string[];
   bases: PayoutConfig;
+  settle: boolean;
+  title: string;
   balances: Record<string, number>;
   log: LogEntry[];
   recordError?: string;
@@ -274,38 +283,47 @@ function Dashboard({
   useBackButton(onBack);
   const [action, setAction] = useState<Action | null>(null);
   const openAction = (a: Action) => { haptic("light"); setAction(a); };
+  // Payout-only actions disappear when their toggle is off / payouts are off.
+  const yaoOn = settle && bases.yaoOn !== false;
+  const gangOn = settle && bases.gangOn !== false;
 
   if (action)
-    return <ActionWizard action={action} players={players} bases={bases} onCancel={() => setAction(null)}
+    return <ActionWizard action={action} players={players} bases={bases} settle={settle} onCancel={() => setAction(null)}
       onConfirm={(s, t, m) => { onRecord(s, t, m); setAction(null); }} />;
 
   return (
     <div>
-      <h1>Singaporean</h1>
+      <h1>{title}</h1>
       {banner}
-      <h2>Balances</h2>
-      <div className="balances">
-        {players.map((p) => (
-          <div key={p} className="bal-row">
-            <span>{p}</span>
-            <span className={"bal " + ((balances[p] || 0) >= 0 ? "pos" : "neg")}>
-              {(balances[p] || 0) >= 0 ? "+" : ""}{(balances[p] || 0).toFixed(2)}
-            </span>
+      {settle ? (
+        <>
+          <h2>Session balances</h2>
+          <div className="balances">
+            {players.map((p) => (
+              <div key={p} className="bal-row">
+                <span>{p}</span>
+                <span className={"bal " + ((balances[p] || 0) >= 0 ? "pos" : "neg")}>
+                  {(balances[p] || 0) >= 0 ? "+" : ""}{(balances[p] || 0).toFixed(2)}
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <p style={{ fontSize: "0.78rem", opacity: 0.65 }}>
-        Payouts · 1 tai: shooter {money(discardValue(bases, 1))} / self-draw {money(zimoEachValue(bases, 1))} each ·
-        {" "}bite {money(bases.yao)} · kong {money(bases.gang)} each · up to {maxTaiOf(bases)} tai
-      </p>
+          <p style={{ fontSize: "0.78rem", opacity: 0.65 }}>
+            Payouts · 1 tai: shooter {money(discardValue(bases, 1))} / self-draw {money(zimoEachValue(bases, 1))} each
+            {yaoOn ? ` · bite ${money(bases.yao)}` : ""}{gangOn ? ` · kong ${money(bases.gang)} each` : ""} · up to {maxTaiOf(bases)} tai
+          </p>
+        </>
+      ) : (
+        <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>No payouts this session — wins are logged, nothing is tallied.</p>
+      )}
 
       <h2>Record action</h2>
       {recordError && <p className="err" style={{ marginTop: 0 }}>{recordError}</p>}
       <div className="choices">
         <div className="choice-btn" onClick={() => openAction("hu")}>Hu<small>win off discard</small></div>
         <div className="choice-btn" onClick={() => openAction("zimo")}>Zimo<small>self-draw</small></div>
-        <div className="choice-btn" onClick={() => openAction("gang")}>Gang<small>kong</small></div>
-        <div className="choice-btn" onClick={() => openAction("yao")}>Yao<small>bite</small></div>
+        {gangOn && <div className="choice-btn" onClick={() => openAction("gang")}>Gang<small>kong</small></div>}
+        {yaoOn && <div className="choice-btn" onClick={() => openAction("yao")}>Yao<small>bite</small></div>}
       </div>
 
       {log.length > 0 && (
@@ -326,36 +344,57 @@ function Dashboard({
 
 // ------------------------------------------------------------- synced player
 
-export function Play({ initial, onBack }: { initial: TrackerState; onBack: () => void }) {
+export function Play({ initial, onBack, onEnded }: { initial: TrackerState; onBack: () => void; onEnded: (s: TrackerState) => void }) {
   const [state, setState] = useState<TrackerState>(initial);
   const [syncing, setSyncing] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [newSeat, setNewSeat] = useState("");
   const [renameErr, setRenameErr] = useState("");
   const [recErr, setRecErr] = useState("");
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const code = state.tracker.code;
   const players = state.tracker.players;
-  const bases = state.tracker.bases;
+  const session = state.session || null;
+  // Money rules come from the SESSION (chosen on the start screen); the group's
+  // bases are only the fallback for anything session-less.
+  const bases = session?.bases || state.tracker.bases;
+  const settle = session ? session.settle !== false : true;
+  const title = session?.mahjong_type === "my3" ? "Malaysian (WIP)" : "Singaporean";
   const busyRef = useRef(false);
   const renamingRef = useRef(false); // pause polling while the rename editor is open
   // Monotonic epoch bumped on every local mutation. A poll started under an
   // older epoch must NOT overwrite state written by a newer mutation that
   // resolved first (a late-resolving getState would otherwise revert it).
   const epochRef = useRef(0);
+  const endedRef = useRef(false); // fire onEnded exactly once
+
+  const sessionGone = (s: TrackerState) => {
+    if (endedRef.current) return true;
+    if (!s.session) { endedRef.current = true; onEnded(s); return true; }
+    return false;
+  };
 
   // Poll for others' changes — but not while the app is backgrounded (a hidden
   // phone would otherwise burn ~24 function calls/min); refresh once on return.
+  // If the session ended under us (someone else ended it / the 24h timeout),
+  // hand the fresh state back to the group screen.
   useEffect(() => {
     const tick = async () => {
       if (busyRef.current || renamingRef.current) return;
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       const e = epochRef.current;
-      try { const s = await getState(code); if (epochRef.current === e) setState(s); } catch { /* keep last */ }
+      try {
+        const s = await getState(code);
+        if (epochRef.current !== e) return;
+        if (sessionGone(s)) return;
+        setState(s);
+      } catch { /* keep last */ }
     };
     const id = setInterval(tick, 2500);
     const onVis = () => { if (document.visibilityState === "visible") tick(); };
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
   const log: LogEntry[] = state.actions.map((a) => ({ summary: a.summary, transfers: a.transfers, actioner: a.actioner, meta: a.meta }));
@@ -365,15 +404,30 @@ export function Play({ initial, onBack }: { initial: TrackerState; onBack: () =>
   const record = async (summary: string, transfers: Transfer[], meta?: ActionMeta) => {
     busyRef.current = true; epochRef.current++;
     setSyncing(true); setRecErr("");
-    try { setState(await addRemoteAction(code, summary, transfers, meta)); haptic("success"); }
+    try { const s = await addRemoteAction(code, summary, transfers, meta, session?.id); if (!sessionGone(s)) setState(s); haptic("success"); }
     catch (e) {
       haptic("error");
       setRecErr("Couldn't record: " + String((e as Error).message || e));
-      // The roster may have changed under us (e.g. a rename) -> refresh so the
-      // user re-picks against the current seats.
-      try { const s = await getState(code); epochRef.current++; setState(s); } catch { /* keep last */ }
+      // The roster/session may have changed under us -> refresh so the user
+      // re-picks against the current state (or lands back on the group page).
+      try { const s = await getState(code); epochRef.current++; if (!sessionGone(s)) setState(s); } catch { /* keep last */ }
     }
     finally { busyRef.current = false; setSyncing(false); }
+  };
+
+  // End the sitting: freezes this session's money into the group debt counter.
+  // Two-tap confirm (misclicks end a whole evening otherwise).
+  const doEnd = async () => {
+    if (!confirmEnd) { setConfirmEnd(true); haptic("warning"); return; }
+    busyRef.current = true; epochRef.current++;
+    setRecErr("");
+    try { const s = await endSession(code); haptic("success"); endedRef.current = true; onEnded(s); }
+    catch (e) {
+      haptic("error");
+      setRecErr("Couldn't end: " + String((e as Error).message || e));
+      try { const s = await getState(code); epochRef.current++; if (!sessionGone(s)) setState(s); } catch { /* keep last */ }
+    }
+    finally { busyRef.current = false; setConfirmEnd(false); }
   };
 
   const openRename = () => { setNewSeat(state.me || ""); setRenameErr(""); setRenaming(true); renamingRef.current = true; };
@@ -395,6 +449,8 @@ export function Play({ initial, onBack }: { initial: TrackerState; onBack: () =>
     <Dashboard
       players={players}
       bases={bases}
+      settle={settle}
+      title={title}
       balances={balances}
       log={log}
       recordError={recErr}
@@ -409,6 +465,14 @@ export function Play({ initial, onBack }: { initial: TrackerState; onBack: () =>
                 <button className="link-btn" style={{ padding: 0, fontSize: "inherit", verticalAlign: "baseline" }}
                   onClick={openRename}>
                   {state.me} ✎
+                </button>
+              </>
+            )}
+            {session && (
+              <> ·{" "}
+                <button className="link-btn" style={{ padding: 0, fontSize: "inherit", verticalAlign: "baseline" }}
+                  onClick={doEnd}>
+                  {confirmEnd ? "tap again to end session" : "end session"}
                 </button>
               </>
             )}

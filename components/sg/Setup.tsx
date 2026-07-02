@@ -3,8 +3,9 @@
 // Create-a-group form: name, players, and the payout table for the session.
 
 import { useEffect, useState } from "react";
-import { useBackButton } from "@/lib/telegram";
+import { haptic, useBackButton } from "@/lib/telegram";
 import { PayoutConfig, discardValue, zimoEachValue, money } from "@/lib/sg/payout";
+import { GameType } from "@/lib/sg/remote";
 
 export function Setup({
   title,
@@ -16,7 +17,7 @@ export function Setup({
   note,
 }: {
   title: string;
-  onStart: (name: string, players: string[], bases: PayoutConfig) => void;
+  onStart: (name: string, players: string[], bases: PayoutConfig, defaultType: GameType) => void;
   onBack: () => void;
   busy?: boolean;
   error?: string;
@@ -26,6 +27,7 @@ export function Setup({
   useBackButton(onBack);
   const [name, setName] = useState("");
   const [names, setNames] = useState(["", "", "", ""]);
+  const [dtype, setDtype] = useState<GameType>("sg4"); // what this group usually plays
   // Payouts (per session). discard = what a single shooter pays at 1 tai;
   // zimo = what EACH other player pays on a self-draw at 1 tai. Both double per
   // tai. Defaults follow the sgmahjong.club 10¢/20¢ table (self-draw = half the
@@ -96,7 +98,7 @@ export function Setup({
       if (dTab.some((v) => v != null)) cfg.discardTable = dTab;
       if (zTab.some((v) => v != null)) cfg.zimoTable = zTab;
     }
-    onStart(name.trim() || "Mahjong", names.map((n) => n.trim()), cfg);
+    onStart(name.trim() || "Mahjong", names.map((n) => n.trim()), cfg, dtype);
   };
 
   return (
@@ -111,10 +113,18 @@ export function Setup({
           onChange={(e) => setNames((arr) => arr.map((x, j) => (j === i ? e.target.value : x)))} />
       ))}
 
-      <h2>Payouts</h2>
+      <h2>What does your group usually play?</h2>
+      <div className="row">
+        {[{ v: "sg4" as GameType, label: "Singaporean (4p)" }, { v: "my3" as GameType, label: "Malaysian (3p) — WIP" }].map((o) => (
+          <div key={o.v} className={"chip" + (dtype === o.v ? " selected" : "")}
+            onClick={() => { haptic("selection"); setDtype(o.v); }}>{o.label}</div>
+        ))}
+      </div>
+
+      <h2>Default payouts</h2>
       <p style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: -4 }}>
-        Defaults follow the sgmahjong.club table. Win values are at 1 tai and double each tai;
-        bite &amp; kong are flat. Change them to match your table.
+        These prefill each session (every session can still change them when it starts). Defaults follow
+        the sgmahjong.club table: win values are at 1 tai and double each tai; bite &amp; kong are flat.
       </p>
       <div className="row" style={{ alignItems: "center" }}>
         <label className="vlabel">shooter pays<input className="text-input small" inputMode="decimal" min="0" value={discard} onChange={(e) => setDiscard(e.target.value)} /></label>

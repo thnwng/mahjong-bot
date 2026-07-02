@@ -6,7 +6,60 @@
 
 import { useState } from "react";
 import { haptic } from "@/lib/telegram";
-import { Profile, setUsername, USERNAME_RE, USERNAME_HINT } from "@/lib/sg/remote";
+import { Profile, setUsername, setPrefs, GameType, GAME_TYPES, USERNAME_RE, USERNAME_HINT } from "@/lib/sg/remote";
+
+// Multi-select checklist of mahjong types (first-run gate + settings reuse it).
+export function GameTypeChecklist({ value, onChange }: { value: GameType[]; onChange: (v: GameType[]) => void }) {
+  const toggle = (t: GameType) => {
+    haptic("selection");
+    onChange(value.includes(t) ? value.filter((x) => x !== t) : [...value, t]);
+  };
+  return (
+    <div className="choices">
+      {GAME_TYPES.map((g) => (
+        <div key={g.v} className={"choice-btn" + (value.includes(g.v) ? " selected-choice" : "")}
+          onClick={() => toggle(g.v)}>
+          {g.label}
+          <small>{value.includes(g.v) ? "selected" : "tap to select"}{g.wip ? " · coming soon" : ""}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// First-run step 2: what will you use this app for? Gates which tabs the home
+// screen offers (changeable later in Settings).
+export function GameTypesGate({ onDone }: { onDone: (types: GameType[]) => void }) {
+  const [picked, setPicked] = useState<GameType[]>(["sg4"]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const submit = async () => {
+    if (!picked.length) { setErr("Pick at least one."); haptic("error"); return; }
+    setSaving(true); setErr("");
+    try { const { gameTypes } = await setPrefs(picked); haptic("success"); onDone(gameTypes); }
+    catch (e) {
+      const msg = String((e as Error).message || e);
+      // Older server without set-prefs (mid-deploy): don't strand the user on
+      // this screen — carry on with their picks; the choice re-asks next boot.
+      if (/unknown op/i.test(msg)) { onDone(picked); return; }
+      haptic("error"); setErr(msg);
+    }
+    finally { setSaving(false); }
+  };
+  return (
+    <div>
+      <h1>What do you play?</h1>
+      <p style={{ opacity: 0.8, fontSize: "0.9rem" }}>
+        Pick everything you&apos;ll use this app for — it decides which tabs you see. You can change this any time in Settings.
+      </p>
+      <GameTypeChecklist value={picked} onChange={setPicked} />
+      <button className="primary-btn" disabled={!picked.length || saving} onClick={submit}>
+        {saving ? "Saving…" : "Continue"}
+      </button>
+      {err && <p className="err">{err}</p>}
+    </div>
+  );
+}
 
 // First-run gate: choose a unique app username (pre-filled with the Telegram
 // handle when there is one). Blocks the app until set — there's no back.
@@ -41,38 +94,4 @@ export function UsernameGate({ suggested, hasHandle, onDone }: { suggested: stri
   );
 }
 
-// Home header: shows your username with an inline editor. Changing it away from
-// your Telegram handle stops the auto-mirroring (handled server-side).
-export function ProfileHeader({ profile, onChange }: { profile: Profile; onChange: (p: Profile) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(profile.username);
-  const [err, setErr] = useState("");
-  const [saving, setSaving] = useState(false);
-  const valid = USERNAME_RE.test(name.trim());
-  const save = async () => {
-    const nm = name.trim();
-    if (nm === profile.username) { setEditing(false); return; }
-    if (!valid) { setErr(USERNAME_HINT); return; }
-    setSaving(true); setErr("");
-    try { const { profile: p } = await setUsername(nm); haptic("success"); onChange(p); setEditing(false); }
-    catch (e) { haptic("error"); setErr(String((e as Error).message || e)); }
-    finally { setSaving(false); }
-  };
-  if (!editing)
-    return (
-      <p style={{ opacity: 0.7, fontSize: "0.85rem", marginTop: 0 }}>
-        Signed in as <strong>{profile.username}</strong>{" "}
-        <button className="link-btn" style={{ padding: 0, fontSize: "inherit", verticalAlign: "baseline" }}
-          onClick={() => { setName(profile.username); setErr(""); setEditing(true); }}>✎</button>
-      </p>
-    );
-  return (
-    <div style={{ marginBottom: 8 }}>
-      <input className="text-input small" autoFocus value={name} maxLength={20}
-        onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
-      <button className="chip" disabled={saving} onClick={save}>Save</button>
-      <button className="chip" onClick={() => setEditing(false)}>Cancel</button>
-      {err && <span className="err" style={{ fontSize: "0.8rem" }}> {err}</span>}
-    </div>
-  );
-}
+// (The old inline "Signed in as X" editor moved into the Settings tab.)

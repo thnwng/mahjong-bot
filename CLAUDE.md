@@ -14,8 +14,8 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | Path | What |
 |---|---|
 | `app/` | Next.js 15 App Router shell; `globals.css` = all styling (Telegram `--tg-theme-*` vars + dark fallbacks) |
-| `components/SGGame.tsx` | SG tracker **router + home** (boot, username gate, deep links, screen union) |
-| `components/sg/` | SG screens: `Identity` (username gate/header), `Join`, `Setup` (create group), `Play` (balances, log, **record-action wizard**) |
+| `components/SGGame.tsx` | Tracker **router + home** (boot gates: username → game-types checklist; game-type dropdown; groups w/ balances + manual reorder; deep links; screen union) |
+| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join`, `Setup` (create group + usual-type + default payouts), `Group` (**debt counter + session banner + session setup w/ payout presets**), `Play` (session balances, log, **record-action wizard**) |
 | `components/RiichiCalculator.tsx`, `TilesMode.tsx`, `ResultCard.tsx` | Riichi calculator UI |
 | `lib/telegram.ts` | The one Telegram wrapper (typed CDN script: haptics, back-button stack, closing confirmation). **Do not migrate to @telegram-apps/sdk-react** — see the decision comment at its top |
 | `lib/sg/payout.ts` | SG money engine (pure; unit-tested in `payout.test.ts`) |
@@ -23,7 +23,8 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `lib/riichi/` | Riichi engine: `analyze.ts` (hand decomposition), `yaku.ts`, `scoring.ts` (unit-tested) |
 | `supabase/functions/track/` | THE backend: validates Telegram initData (HMAC) on every call, service-role DB access |
 | `supabase/functions/bot/` | Webhook bot (@jpgmahjongbot): /start /open /help, group binding, fail-closed secret check |
-| `supabase/schema.sql` | Reference schema (applied by hand in the SQL editor — historical; see plan item 10 for migrations) |
+| `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |
+| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets); apply new ones in the SQL editor BEFORE the matching function deploys |
 
 ## How each layer deploys
 
@@ -39,15 +40,20 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 - **Deploy order for coordinated changes: schema → function → front-end.**
   The client treats an "unknown op" error as version skew and degrades.
 
-## Client–server contract (3 sentences)
+## Client–server contract
 
 Every request is `POST { op, initData, ...payload }` to the `track` function;
 the server validates `initData` (HMAC with the bot token, 24h freshness) and
-derives the account id from it — nothing client-claimed is trusted. Every op
-returns the full canonical `TrackerState` (tracker + actions + me +
-claimedNames), so the client never merges deltas. Identity = Telegram account
-id; one global unique `profiles.username` (auto-synced to the Telegram @handle
-until customized) + a renamable per-group seat name in `members`.
+derives the account id from it — nothing client-claimed is trusted. Every group
+op returns the full canonical `TrackerState` (tracker + the ACTIVE session and
+its actions + `debts` summed from everything ended + me + claimedNames), so the
+client never merges deltas. Identity = Telegram account id; one global unique
+`profiles.username` (auto-synced to the Telegram @handle until customized) +
+`profiles.game_types` (first-run checklist; null = not chosen) +
+`profiles.payout_presets`, plus a renamable per-group seat name in `members`.
+Money lives in SESSIONS: one active per group (partial unique index), started
+with its own payout config (or `settle=false` = log-only), ended manually or
+lazily 24h after start; ended sessions freeze into the group debt counter.
 
 ## Gotchas / history
 

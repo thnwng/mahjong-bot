@@ -25,6 +25,9 @@ export interface PayoutConfig {
   discardTable?: (number | null)[];
   /** Optional exact per-tai self-draw-each amounts (index = tai-1). */
   zimoTable?: (number | null)[];
+  /** Session toggles: record bite (yao) / kong (gang) payouts? Default true. */
+  yaoOn?: boolean;
+  gangOn?: boolean;
 }
 
 /** Default payouts — the sgmahjong.club 10¢/20¢ table: shooter 0.40 / self-draw

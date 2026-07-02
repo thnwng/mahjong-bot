@@ -245,6 +245,7 @@ Deno.serve(async (req) => {
         name: string; players: string[]; bases: unknown; tgChatId?: number;
       };
       if (!name || !Array.isArray(players) || players.length < 2) return json({ error: "name + >=2 players required" }, 400);
+      if (players.length > 4) return json({ error: "max 4 players per group" }, 400);
       const chat = typeof tgChatId === "number" && Number.isFinite(tgChatId) ? tgChatId : null;
       let code = randomCode();
       for (let i = 0; i < 3; i++) {
@@ -299,6 +300,8 @@ Deno.serve(async (req) => {
       } else if (op === "join-new") {
         const raw = String((body as { name?: string }).name || "").trim();
         if (!raw) return json({ error: "name required" }, 400);
+        const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
+        if (players.length >= 4) return json({ error: "this group is full (max 4 players)" }, 400);
         // Claim the seat FIRST: if this fails (already joined, or name taken) we
         // return 409 having touched nothing — no orphan player can be created.
         const { error: ie } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: raw });
@@ -306,7 +309,6 @@ Deno.serve(async (req) => {
         // Then ensure the player exists in the roster. add_player appends
         // atomically (guarded by `not (players ? raw)`), so concurrent joins
         // can't lose each other's seats.
-        const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
         if (!players.includes(raw)) {
           const { error: re } = await sb.rpc("add_player", { p_id: tracker.id, p_name: raw });
           if (re) throw re;

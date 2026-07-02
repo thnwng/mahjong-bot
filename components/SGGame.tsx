@@ -443,6 +443,7 @@ function JoinGroup({
   const roster = new Set(state.tracker.players || []); // every seat name in this group
   const claimed = new Set(state.claimedNames || []);
   const unclaimed = (state.tracker.players || []).filter((p) => !claimed.has(p));
+  const isFull = (state.tracker.players || []).length >= 4;
   // Pre-fill the new-player name from your app username — but never a name
   // already taken as a seat here (else "Join as X" would 409 on the unique
   // (group, name)). Suffix a number on collision so the field is never blank.
@@ -479,11 +480,19 @@ function JoinGroup({
           </div>
         </>
       )}
-      <h2>Or join as a new player</h2>
-      <input className="text-input" placeholder="Your name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-      <button className="primary-btn" disabled={!newName.trim() || working || busy} onClick={() => run(() => joinNew(code, newName.trim()))}>
-        {working ? "Joining…" : `Join as ${newName.trim() || "new player"}`}
-      </button>
+      {isFull ? (
+        <p style={{ opacity: 0.65, fontSize: "0.88rem" }}>
+          This group is full (4 players). You can only take an unclaimed seat above.
+        </p>
+      ) : (
+        <>
+          <h2>Or join as a new player</h2>
+          <input className="text-input" placeholder="Your name" value={newName} onChange={(e) => setNewName(e.target.value)} />
+          <button className="primary-btn" disabled={!newName.trim() || working || busy} onClick={() => run(() => joinNew(code, newName.trim()))}>
+            {working ? "Joining…" : `Join as ${newName.trim() || "new player"}`}
+          </button>
+        </>
+      )}
       {err && <p style={{ color: "#e54848" }}>{err}</p>}
       <button className="link-btn" onClick={onBack}>← Back</button>
     </div>

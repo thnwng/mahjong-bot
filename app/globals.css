@@ -212,6 +212,27 @@ small {
   border-color: transparent;
 }
 
+/* Emoji tile variant — larger to show the pictogram */
+.tile-emoji {
+  font-size: 1.45rem;
+  min-width: 44px;
+  height: 48px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+/* Dimmed / disabled tile */
+.tile-dim {
+  opacity: 0.28;
+  cursor: default;
+}
+
+/* Rack tiles (in the selected-hand row) */
+.rack-tile {
+  background: var(--secondary-bg);
+  border-color: var(--hint);
+}
+
 .tile-badge {
   position: absolute;
   top: -6px;
@@ -225,6 +246,43 @@ small {
   font-size: 0.65rem;
   line-height: 16px;
   text-align: center;
+}
+
+/* Declared meld rows */
+.meld-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.meld-label {
+  font-size: 0.78rem;
+  color: var(--hint);
+  margin-left: 6px;
+}
+
+/* Meld builder panel */
+.meld-builder {
+  padding: 10px;
+  border: 1px solid var(--hint);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+.meld-builder-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.meld-preview-tiles {
+  font-size: 1.5rem;
+  line-height: 1;
+  letter-spacing: 1px;
 }
 
 /* Result card */

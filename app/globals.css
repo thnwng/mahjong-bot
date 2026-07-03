@@ -321,6 +321,48 @@ small {
   margin-top: 2px;
 }
 
+/* Per-tai payout table (group setup): tai | zimo | shoot */
+.pay-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pay-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.pay-row .text-input {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.pay-tai {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.pay-head {
+  font-size: 0.75rem;
+  color: var(--hint);
+  margin-bottom: 2px;
+}
+
+.pay-head small {
+  display: block;
+  font-size: 0.68rem;
+}
+
+/* Invalid numeric cell */
+.text-input.bad {
+  border-color: var(--neg);
+}
+
 /* Declared meld rows */
 .meld-row {
   display: flex;

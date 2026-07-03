@@ -301,7 +301,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
     case "create":
       return (
         <Setup
-          title="Create a new group" startLabel="Create group"
+          title="Create a new group" startLabel="Create group" presets={profile?.presets || []}
           note={tgChatId !== undefined
             ? "When you create it, I'll post a join button in your Telegram group so everyone can tap to join — then pick which player you are."
             : "After creating, pick which player you are."}

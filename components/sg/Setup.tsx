@@ -1,14 +1,31 @@
 "use client";
 
-// Create-a-group form: name, players, and the payout table for the session.
+// Create-a-group form: name, players, usual game type, and the group's default
+// payout table. Payouts are a SCHEME dropdown (sgmahjong.club + your saved
+// presets, or Custom) that fills a per-tai table with a Zimo (self-draw each)
+// and a Shoot (shooter pays) column; every cell is editable. Bite & kong are
+// flat amounts below. Whatever the table shows is exactly what gets charged.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
 import { PayoutConfig, discardValue, zimoEachValue, money } from "@/lib/sg/payout";
-import { GameType } from "@/lib/sg/remote";
+import { GameType, PayoutPreset, BUILTIN_PRESETS } from "@/lib/sg/remote";
+
+type Row = { z: string; d: string }; // z = zimo (self-draw each), d = shoot (shooter pays)
+const CUSTOM = "__custom__";
+const MAXTAI_CAP = 20;
+
+// Fill the table from a payout config (honours its per-tai tables / cap / doubling).
+function fillRows(cfg: PayoutConfig, mt: number): Row[] {
+  return Array.from({ length: mt }, (_, i) => ({
+    z: money(zimoEachValue(cfg, i + 1)),
+    d: money(discardValue(cfg, i + 1)),
+  }));
+}
 
 export function Setup({
   title,
+  presets,
   onStart,
   onBack,
   busy,
@@ -17,6 +34,7 @@ export function Setup({
   note,
 }: {
   title: string;
+  presets?: PayoutPreset[];
   onStart: (name: string, players: string[], bases: PayoutConfig, defaultType: GameType) => void;
   onBack: () => void;
   busy?: boolean;
@@ -28,76 +46,72 @@ export function Setup({
   const [name, setName] = useState("");
   const [names, setNames] = useState(["", "", "", ""]);
   const [dtype, setDtype] = useState<GameType>("sg4"); // what this group usually plays
-  // Payouts (per session). discard = what a single shooter pays at 1 tai;
-  // zimo = what EACH other player pays on a self-draw at 1 tai. Both double per
-  // tai. Defaults follow the sgmahjong.club 10¢/20¢ table (self-draw = half the
-  // shooter; bite & kong a flat 0.10). Blank self-draw falls back to 2× shooter.
-  const [discard, setDiscard] = useState("0.40");
-  const [zimo, setZimo] = useState("0.20");
-  const [yao, setYao] = useState("0.10");
-  const [gang, setGang] = useState("0.10");
-  const [maxTai, setMaxTai] = useState("10");
-  const [advanced, setAdvanced] = useState(false);
-  const [cap, setCap] = useState("");
-  const [customOn, setCustomOn] = useState(false);
-  const [rows, setRows] = useState<{ d: string; z: string }[]>([]);
 
-  const num = (s: string, d: number) => { const v = parseFloat(s); return isFinite(v) ? v : d; };
-  const pos = (s: string, d: number) => { const v = parseFloat(s); return isFinite(v) && v >= 0 ? v : d; };
-  const shooter = pos(discard, 0.1);          // discard base; must be > 0
-  const selfDraw = pos(zimo, shooter * 2);    // blank -> auto 2× shooter (house rule)
-  const ready = names.every((n) => n.trim()) && shooter > 0;
-  const mt = Math.max(1, Math.min(20, Math.floor(num(maxTai, 10))));
-  const capN = Math.floor(num(cap, mt));
-  const useCap = cap.trim() !== "" && capN >= 1 && capN < mt;
+  // Scheme dropdown = builtins + your saved presets. Editing a cell flips it to
+  // "Custom". The default group scheme is the first sgmahjong builtin.
+  const schemes: PayoutPreset[] = [...BUILTIN_PRESETS, ...(presets || [])];
+  const [scheme, setScheme] = useState(schemes[0].name);
+  const [rows, setRows] = useState<Row[]>(() => fillRows(schemes[0].cfg, schemes[0].cfg.maxTai ?? 10));
+  const [yao, setYao] = useState(money(schemes[0].cfg.yao ?? 0.1));
+  const [gang, setGang] = useState(money(schemes[0].cfg.gang ?? 0.1));
 
-  // A config built from the current fields (without custom tables) — used to
-  // show the doubling preview/placeholders.
-  const previewCfg: PayoutConfig = {
-    tai: shooter, zimo: selfDraw,
-    yao: pos(yao, 0.1), gang: pos(gang, 0.1), maxTai: mt, ...(useCap ? { cap: capN } : {}),
+  const num = (s: string) => parseFloat(s);
+  const okNum = (s: string) => { const v = num(s); return isFinite(v) && v >= 0; };
+  const mt = rows.length;
+
+  // Pick a scheme from the dropdown: refill the whole table + flats from it.
+  const pickScheme = (nm: string) => {
+    haptic("selection");
+    setScheme(nm);
+    if (nm === CUSTOM) return; // keep the current numbers, just edit freely
+    const s = schemes.find((x) => x.name === nm);
+    if (!s) return;
+    setRows(fillRows(s.cfg, s.cfg.maxTai ?? 10));
+    setYao(money(s.cfg.yao ?? 0.1));
+    setGang(money(s.cfg.gang ?? 0.1));
   };
 
-  // Keep the per-tai custom rows in sync with max tai (drop hidden stale rows).
-  useEffect(() => { setRows((arr) => (arr.length > mt ? arr.slice(0, mt) : arr)); }, [mt]);
+  // Editing any cell means the table no longer matches a named scheme.
+  const setCell = (i: number, k: "z" | "d", v: string) => {
+    setScheme(CUSTOM);
+    setRows((arr) => arr.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  };
 
-  const setRow = (i: number, k: "d" | "z", v: string) =>
+  // Grow/shrink the number of tai rows. New rows continue the doubling of the
+  // last row so the table stays sensible; existing (possibly edited) rows stay.
+  // Changing the row count deviates from a named scheme -> flip to Custom (also
+  // makes re-picking that scheme from the dropdown a real change that reloads it).
+  const setMaxTai = (n: number) => {
+    setScheme(CUSTOM);
+    const target = Math.max(1, Math.min(MAXTAI_CAP, Math.floor(n)));
     setRows((arr) => {
+      if (target <= arr.length) return arr.slice(0, target);
       const next = arr.slice();
-      while (next.length < mt) next.push({ d: "", z: "" });
-      next[i] = { ...next[i], [k]: v };
+      let lastZ = num(next[next.length - 1]?.z) || 0.2;
+      let lastD = num(next[next.length - 1]?.d) || 0.4;
+      while (next.length < target) { lastZ *= 2; lastD *= 2; next.push({ z: money(lastZ), d: money(lastD) }); }
       return next;
     });
-
-  const usePreset = () => {
-    // sgmahjong.club 10¢/20¢: shooter $0.40 / self-draw each $0.20 at 1 tai,
-    // doubling to 10 tai; bite & kong $0.10.
-    setDiscard("0.40"); setZimo("0.20"); setYao("0.10"); setGang("0.10");
-    setMaxTai("10"); setAdvanced(false); setCap(""); setCustomOn(false); setRows([]);
   };
 
+  const rowsValid = rows.length >= 1 && rows.every((r) => okNum(r.z) && okNum(r.d));
+  const ready = names.every((n) => n.trim()) && rowsValid;
+
   const submit = () => {
+    // Store the table verbatim as per-tai tables so the charged amount always
+    // equals exactly what's shown. tai/zimo (the 1-tai bases) are kept too for
+    // display + back-compat.
+    const zTab = rows.map((r) => num(r.z));
+    const dTab = rows.map((r) => num(r.d));
     const cfg: PayoutConfig = {
-      tai: shooter,
-      zimo: selfDraw,
-      yao: pos(yao, 0.1),
-      gang: pos(gang, 0.1),
+      tai: dTab[0],
+      zimo: zTab[0],
+      yao: okNum(yao) ? num(yao) : 0.1,
+      gang: okNum(gang) ? num(gang) : 0.1,
       maxTai: mt,
+      discardTable: dTab,
+      zimoTable: zTab,
     };
-    if (useCap) cfg.cap = capN;
-    if (customOn) {
-      const col = (k: "d" | "z") =>
-        Array.from({ length: mt }, (_, i) => {
-          const raw = rows[i]?.[k]?.trim();
-          if (!raw) return null;
-          const v = parseFloat(raw);
-          return isFinite(v) && v >= 0 ? v : null;
-        });
-      const dTab = col("d");
-      const zTab = col("z");
-      if (dTab.some((v) => v != null)) cfg.discardTable = dTab;
-      if (zTab.some((v) => v != null)) cfg.zimoTable = zTab;
-    }
     onStart(name.trim() || "Mahjong", names.map((n) => n.trim()), cfg, dtype);
   };
 
@@ -123,69 +137,57 @@ export function Setup({
 
       <h2>Default payouts</h2>
       <p style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: -4 }}>
-        These prefill each session (every session can still change them when it starts). Defaults follow
-        the sgmahjong.club table: win values are at 1 tai and double each tai; bite &amp; kong are flat.
+        Pick a scheme to fill the table, then edit any amount. Whatever the table shows is what gets charged.
+        These prefill each session (a session can still change them when it starts).
       </p>
-      <div className="row" style={{ alignItems: "center" }}>
-        <label className="vlabel">shooter pays<input className="text-input small" inputMode="decimal" min="0" value={discard} onChange={(e) => setDiscard(e.target.value)} /></label>
-        <label className="vlabel">self-draw (each)<input className="text-input small" inputMode="decimal" min="0" placeholder={money(shooter * 2)} value={zimo} onChange={(e) => setZimo(e.target.value)} /></label>
-        <label className="vlabel">max tai<input className="text-input small" inputMode="numeric" min="1" value={maxTai} onChange={(e) => setMaxTai(e.target.value)} /></label>
+
+      <label className="vlabel" style={{ marginBottom: 8 }}>Payout scheme
+        <select className="text-input" value={scheme} onChange={(e) => pickScheme(e.target.value)}>
+          {schemes.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+          <option value={CUSTOM}>Custom</option>
+        </select>
+      </label>
+
+      {/* Per-tai table: Tai | Zimo (self-draw each) | Shoot (shooter pays) */}
+      <div className="pay-table">
+        <div className="pay-row pay-head">
+          <span className="pay-tai">tai</span>
+          <span>Zimo <small>(self-draw, each)</small></span>
+          <span>Shoot <small>(shooter pays)</small></span>
+        </div>
+        {rows.map((r, i) => (
+          <div className="pay-row" key={i}>
+            <span className="pay-tai">{i + 1}</span>
+            <input className={"text-input small" + (okNum(r.z) ? "" : " bad")} inputMode="decimal"
+              value={r.z} onChange={(e) => setCell(i, "z", e.target.value)} />
+            <input className={"text-input small" + (okNum(r.d) ? "" : " bad")} inputMode="decimal"
+              value={r.d} onChange={(e) => setCell(i, "d", e.target.value)} />
+          </div>
+        ))}
       </div>
-      <div className="row" style={{ alignItems: "center" }}>
-        <label className="vlabel">bite (yao)<input className="text-input small" inputMode="decimal" min="0" value={yao} onChange={(e) => setYao(e.target.value)} /></label>
-        <label className="vlabel">kong (gang)<input className="text-input small" inputMode="decimal" min="0" value={gang} onChange={(e) => setGang(e.target.value)} /></label>
-      </div>
-      <p style={{ fontSize: "0.8rem", opacity: 0.7 }}>
-        e.g. 1 tai → shooter pays {money(discardValue(previewCfg, 1))}, self-draw {money(zimoEachValue(previewCfg, 1))} each ·
-        {" "}{mt} tai → {money(discardValue(previewCfg, mt))} / {money(zimoEachValue(previewCfg, mt))}
-      </p>
-      <p style={{ fontSize: "0.78rem", opacity: 0.6 }}>
-        On sgmahjong.club the self-draw amount is half the shooter (3 people pay it). Leave self-draw blank to use
-        2× the shooter instead (the classic rule). “Max tai” is the highest tai you can pick; bigger wins are
-        charged at the max-tai amount. Bite &amp; kong are a flat amount each other player pays.
-      </p>
-      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <button type="button" className="chip" onClick={usePreset}>Reset to sgmahjong.club (10¢/20¢)</button>
-        <button type="button" className="chip" onClick={() => setAdvanced((a) => !a)}>{advanced ? "Hide advanced" : "Advanced…"}</button>
+      <div className="row" style={{ alignItems: "center", gap: 8, marginTop: 6 }}>
+        <span style={{ fontSize: "0.8rem", opacity: 0.7 }}>Max tai</span>
+        <button type="button" className="chip" onClick={() => setMaxTai(mt - 1)} disabled={mt <= 1}>−</button>
+        <span style={{ minWidth: 20, textAlign: "center" }}>{mt}</span>
+        <button type="button" className="chip" onClick={() => setMaxTai(mt + 1)} disabled={mt >= MAXTAI_CAP}>+</button>
       </div>
 
-      {advanced && (
-        <div style={{ marginTop: 10 }}>
-          <label className="vlabel">doubling cap (tai where value stops doubling — blank = max tai)
-            <input className="text-input small" inputMode="numeric" placeholder={String(mt)} value={cap} onChange={(e) => setCap(e.target.value)} />
-          </label>
-          <div className="row" style={{ alignItems: "center", marginTop: 6 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem" }}>
-              <input type="checkbox" checked={customOn} onChange={(e) => setCustomOn(e.target.checked)} />
-              Type the exact amount for each tai (overrides doubling)
-            </label>
-          </div>
-          {customOn && (
-            <div style={{ marginTop: 6 }}>
-              <div className="row" style={{ fontSize: "0.75rem", opacity: 0.6 }}>
-                <span style={{ width: 48 }}>tai</span><span style={{ flex: 1 }}>shooter</span><span style={{ flex: 1 }}>self-draw each</span>
-              </div>
-              {Array.from({ length: mt }, (_, i) => (
-                <div key={i} className="row" style={{ alignItems: "center", gap: 6, marginTop: 4 }}>
-                  <span style={{ width: 48 }}>{i + 1}</span>
-                  <input className="text-input small" style={{ flex: 1 }} inputMode="decimal"
-                    placeholder={money(discardValue(previewCfg, i + 1))}
-                    value={rows[i]?.d ?? ""} onChange={(e) => setRow(i, "d", e.target.value)} />
-                  <input className="text-input small" style={{ flex: 1 }} inputMode="decimal"
-                    placeholder={money(zimoEachValue(previewCfg, i + 1))}
-                    value={rows[i]?.z ?? ""} onChange={(e) => setRow(i, "z", e.target.value)} />
-                </div>
-              ))}
-              <p style={{ fontSize: "0.78rem", opacity: 0.6 }}>Blank rows fall back to the doubling values above.</p>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="row" style={{ alignItems: "center", marginTop: 8 }}>
+        <label className="vlabel">bite (yao)<input className="text-input small" inputMode="decimal" value={yao}
+          onChange={(e) => { setYao(e.target.value); setScheme(CUSTOM); }} /></label>
+        <label className="vlabel">kong (gang)<input className="text-input small" inputMode="decimal" value={gang}
+          onChange={(e) => { setGang(e.target.value); setScheme(CUSTOM); }} /></label>
+      </div>
+      <p style={{ fontSize: "0.78rem", opacity: 0.6 }}>
+        Zimo is what EACH other player pays on a self-draw; Shoot is what the single discarder pays.
+        Bite &amp; kong are a flat amount each other player pays.
+      </p>
 
       <button className="primary-btn" disabled={!ready || busy} onClick={submit}>
         {busy ? "Creating…" : startLabel || "Start game"}
       </button>
       {error && <p className="err">{error}</p>}
+      {!rowsValid && <p className="err">Every tai needs a Zimo and Shoot amount (numbers, 0 or more).</p>}
       <button className="link-btn" onClick={onBack}>← Back</button>
     </div>
   );

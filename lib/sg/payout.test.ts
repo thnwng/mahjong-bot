@@ -60,6 +60,28 @@ describe("discardValue / zimoEachValue (sgmahjong.club 10¢/20¢ defaults)", () 
     expect(zimoEachValue(cfg, 3)).toBeCloseTo(4.0, 10);
   });
 
+  it("round-trips a full per-tai table (Setup's WYSIWYG contract)", () => {
+    // Setup stores the visible table verbatim as discardTable/zimoTable; the
+    // charged amount for every selectable tai must equal exactly what was shown.
+    const shootCol = [0.4, 0.8, 1.6, 3.2, 6.4];
+    const zimoCol = [0.2, 0.4, 0.8, 1.6, 3.2];
+    const cfg: PayoutConfig = {
+      tai: shootCol[0], zimo: zimoCol[0], yao: 0.1, gang: 0.1, maxTai: 5,
+      discardTable: shootCol, zimoTable: zimoCol,
+    };
+    for (let t = 1; t <= 5; t++) {
+      expect(discardValue(cfg, t)).toBeCloseTo(shootCol[t - 1], 10);
+      expect(zimoEachValue(cfg, t)).toBeCloseTo(zimoCol[t - 1], 10);
+    }
+    // An irregular (non-doubling) hand-edited table is honoured cell-for-cell.
+    const irregular: PayoutConfig = {
+      tai: 0.5, zimo: 0.3, yao: 0.1, gang: 0.1, maxTai: 3,
+      discardTable: [0.5, 0.9, 5.0], zimoTable: [0.3, 0.55, 2.0],
+    };
+    expect(discardValue(irregular, 2)).toBeCloseTo(0.9, 10);
+    expect(zimoEachValue(irregular, 3)).toBeCloseTo(2.0, 10);
+  });
+
   it("uses an exact per-tai table entry when present, doubling for blank rows", () => {
     const cfg: PayoutConfig = {
       tai: 0.4, zimo: 0.2, yao: 0.1, gang: 0.1, maxTai: 3,

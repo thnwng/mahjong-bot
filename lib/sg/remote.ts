@@ -98,6 +98,12 @@ export interface PayoutPreset {
   cfg: PayoutConfig;
 }
 
+/** Built-in payout schemes offered in the scheme dropdowns (group setup +
+ *  session start), before the account's own saved presets. */
+export const BUILTIN_PRESETS: PayoutPreset[] = [
+  { name: "sgmahjong.club (10¢/20¢)", cfg: { tai: 0.4, zimo: 0.2, yao: 0.1, gang: 0.1, maxTai: 10 } },
+];
+
 export interface Profile {
   username: string;              // display name (the DB column is still `username`; not unique)
   gameTypes?: GameType[] | null; // null = first-run checklist not done yet

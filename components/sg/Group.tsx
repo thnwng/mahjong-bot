@@ -11,6 +11,7 @@ import {
   TrackerState,
   PayoutPreset,
   GAME_TYPES,
+  BUILTIN_PRESETS,
   savePreset,
   BOT_APP_LINK,
 } from "@/lib/sg/remote";
@@ -135,9 +136,7 @@ export function GroupScreen({
 
 // Built-in payout presets. "Group default" (the payouts chosen at group
 // creation) is added dynamically in front.
-const BUILTINS: PayoutPreset[] = [
-  { name: "sgmahjong.club (10¢/20¢)", cfg: { tai: 0.4, zimo: 0.2, yao: 0.1, gang: 0.1, maxTai: 10 } },
-];
+const BUILTINS: PayoutPreset[] = BUILTIN_PRESETS;
 const NONE = "__none__"; // "don't need, ownself settle"
 
 const cfgToFields = (c: PayoutConfig) => ({

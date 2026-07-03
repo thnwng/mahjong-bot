@@ -68,14 +68,15 @@ create or replace function add_player(p_id uuid, p_name text) returns void
 revoke all on function add_player(uuid, text) from public, anon, authenticated;
 grant execute on function add_player(uuid, text) to service_role;
 
--- One global username per Telegram account, seeded from the user's Telegram
--- @handle on first use and unique (case-insensitively) across all accounts.
--- Independent of the per-group SEAT names in `members` (a seat defaults to this
--- username at join but is still renamable per group). `auto_sync` = keep
--- mirroring the Telegram @handle until the user picks a custom username.
+-- One profile per Telegram account. `username` is a DISPLAY NAME (a plain
+-- label, NOT unique — the old unique index was dropped in migration 0003;
+-- the column name is kept as `username`). Seeded from the user's Telegram
+-- display name; `auto_sync` = keep mirroring that Telegram name until the user
+-- pins a custom one. Independent of the per-group SEAT names in `members`
+-- (a seat defaults to this name at join but is still renamable per group).
 create table if not exists profiles (
   user_id    bigint primary key,                  -- Telegram account id (from validated initData)
-  username   text not null,
+  username   text not null,                        -- display name (not unique)
   auto_sync  boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -83,8 +84,8 @@ create table if not exists profiles (
 -- Migrations for an existing/older profiles table:
 alter table profiles add column if not exists auto_sync boolean not null default true;
 alter table profiles add column if not exists updated_at timestamptz not null default now();
--- Case-insensitive uniqueness via a functional index (no two "Bob"/"bob").
-create unique index if not exists profiles_username_lc_key on profiles (lower(username));
+-- 0003: display names are not unique — drop the old case-insensitive unique index.
+drop index if exists profiles_username_lc_key;
 alter table profiles enable row level security;   -- no policies: only the Edge Function (service role) touches it
 
 -- Rename the caller's seat within a group (the per-group display name).

@@ -1,12 +1,12 @@
 "use client";
 
-// Settings tab: change your username and which mahjong types the home screen
+// Settings tab: change your display name and which mahjong types the home screen
 // offers. Payout presets are saved from the session-setup screen; managing
 // (renaming/deleting) them here is still WIP.
 
 import { useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
-import { Profile, setUsername, setPrefs, GameType, USERNAME_RE, USERNAME_HINT } from "@/lib/sg/remote";
+import { Profile, setDisplayName, setPrefs, GameType, validDisplayName, NAME_MAX, NAME_HINT } from "@/lib/sg/remote";
 import { GameTypeChecklist } from "./Identity";
 
 export function Settings({
@@ -32,10 +32,10 @@ export function Settings({
     const nm = name.trim();
     setNameMsg("");
     if (nm === profile.username) { setNameErr(""); return; }
-    if (!USERNAME_RE.test(nm)) { setNameErr(USERNAME_HINT); return; }
+    if (!validDisplayName(nm)) { setNameErr(NAME_HINT); return; }
     setSavingName(true); setNameErr("");
     try {
-      const { profile: p } = await setUsername(nm);
+      const { profile: p } = await setDisplayName(nm);
       haptic("success"); setNameMsg("Saved.");
       onProfile({ ...profile, ...p });
     } catch (e) { haptic("error"); setNameErr(String((e as Error).message || e)); }
@@ -58,14 +58,14 @@ export function Settings({
     <div>
       <h1>Settings</h1>
 
-      <h2>Username</h2>
+      <h2>Display name</h2>
       <p style={{ opacity: 0.7, fontSize: "0.82rem", marginTop: 0 }}>
-        Your name across the whole app. Typing a custom one stops it mirroring your Telegram handle.
+        How you show up across the app. Typing a custom one stops it mirroring your Telegram name. Doesn&apos;t have to be unique.
       </p>
-      <input className="text-input" value={name} maxLength={20}
+      <input className="text-input" value={name} maxLength={NAME_MAX}
         onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveName(); }} />
       <div className="row">
-        <button className="chip" disabled={savingName} onClick={saveName}>{savingName ? "Saving…" : "Save username"}</button>
+        <button className="chip" disabled={savingName} onClick={saveName}>{savingName ? "Saving…" : "Save name"}</button>
         {nameMsg && <span style={{ fontSize: "0.85rem", opacity: 0.7, alignSelf: "center" }}>{nameMsg}</span>}
       </div>
       {nameErr && <p className="err">{nameErr}</p>}

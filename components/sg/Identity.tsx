@@ -1,12 +1,12 @@
 "use client";
 
-// First-run username gate + the "Signed in as" header with its inline editor.
-// The username is the account's one global handle (profiles table); per-group
-// seat names are separate and renamed from inside a group.
+// First-run display-name gate + the game-types checklist. The display name is
+// the account's one label (profiles table; not unique); per-group seat names are
+// separate and renamed from inside a group.
 
 import { useState } from "react";
 import { haptic } from "@/lib/telegram";
-import { Profile, setUsername, setPrefs, GameType, GAME_TYPES, USERNAME_RE, USERNAME_HINT } from "@/lib/sg/remote";
+import { Profile, setDisplayName, setPrefs, GameType, GAME_TYPES, validDisplayName, NAME_MAX, NAME_HINT } from "@/lib/sg/remote";
 
 // Multi-select checklist of mahjong types (first-run gate + settings reuse it).
 export function GameTypeChecklist({ value, onChange }: { value: GameType[]; onChange: (v: GameType[]) => void }) {
@@ -61,35 +61,33 @@ export function GameTypesGate({ onDone }: { onDone: (types: GameType[]) => void 
   );
 }
 
-// First-run gate: choose a unique app username (pre-filled with the Telegram
-// handle when there is one). Blocks the app until set — there's no back.
-export function UsernameGate({ suggested, hasHandle, onDone }: { suggested: string; hasHandle: boolean; onDone: (p: Profile) => void }) {
-  const [name, setName] = useState(hasHandle ? suggested : "");
+// First-run gate: confirm your display name (pre-filled with your Telegram
+// name). Not unique — just a label. Blocks the app until set — there's no back.
+export function UsernameGate({ suggested, onDone }: { suggested: string; hasHandle?: boolean; onDone: (p: Profile) => void }) {
+  const [name, setName] = useState(suggested);
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
-  const valid = USERNAME_RE.test(name.trim());
+  const valid = validDisplayName(name);
   const submit = async () => {
-    if (!valid) { setErr(USERNAME_HINT); haptic("error"); return; }
+    if (!valid) { setErr(NAME_HINT); haptic("error"); return; }
     setSaving(true); setErr("");
-    try { const { profile } = await setUsername(name.trim()); haptic("success"); onDone(profile); }
+    try { const { profile } = await setDisplayName(name.trim()); haptic("success"); onDone(profile); }
     catch (e) { haptic("error"); setErr(String((e as Error).message || e)); }
     finally { setSaving(false); }
   };
   return (
     <div>
-      <h1>Pick a username</h1>
+      <h1>Your display name</h1>
       <p style={{ opacity: 0.8, fontSize: "0.9rem" }}>
-        {hasHandle
-          ? "This is your name across the app. We suggested your Telegram handle — keep it and it stays in sync when you rename on Telegram, or type your own to fix it."
-          : "This is your name across the app. You don't have a Telegram username, so choose one."}
+        This is how you show up across the app. We filled in your Telegram name — keep it (it&apos;ll update if you rename on Telegram) or type your own.
       </p>
-      <input className="text-input" autoFocus value={name} maxLength={20} placeholder="username"
+      <input className="text-input" autoFocus value={name} maxLength={NAME_MAX} placeholder="your name"
         onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
       <button className="primary-btn" disabled={!valid || saving} onClick={submit}>
         {saving ? "Saving…" : "Continue"}
       </button>
       {err && <p className="err">{err}</p>}
-      <p style={{ opacity: 0.55, fontSize: "0.78rem" }}>{USERNAME_HINT} Must be unique.</p>
+      <p style={{ opacity: 0.55, fontSize: "0.78rem" }}>{NAME_HINT} Doesn&apos;t have to be unique.</p>
     </div>
   );
 }

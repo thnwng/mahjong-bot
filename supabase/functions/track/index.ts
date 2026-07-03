@@ -196,40 +196,29 @@ async function groupState(sb: SB, tracker: Record<string, unknown>, userId: numb
   return { tracker, actions, session, debts, me: info.me, claimedNames: info.claimedNames };
 }
 
-// --- Usernames (one global handle per Telegram account) ----------------------
-// 3-20 chars, letters/digits/underscore; unique case-insensitively (functional
-// index on lower(username)).
-// Keep in sync with USERNAME_RE in lib/sg/remote.ts (the client copy).
-const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
-
-// Strip a Telegram name to a valid handle fragment ([a-z0-9_]). Folds accents
-// first so "José" -> "jose" instead of being lost.
-function handleFragment(s: unknown): string {
-  return String(s ?? "")
-    .normalize("NFKD").replace(/[̀-ͯ]/g, "")
-    .toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 15);
+// --- Display names (one per Telegram account; NOT unique) ---------------------
+// A plain label seeded from the user's Telegram display name. Two people may
+// share one (the old global-uniqueness rule + its index were dropped in
+// migration 0003). The DB column is still called `username`.
+// 1-30 chars, no control characters. Keep in sync with validName in
+// lib/sg/remote.ts (the client copy).
+const NAME_MAX = 30;
+function validName(s: unknown): boolean {
+  const t = String(s ?? "").trim();
+  if (t.length < 1 || t.length > NAME_MAX) return false;
+  for (const ch of t) { const c = ch.codePointAt(0) ?? 0; if (c < 0x20 || c === 0x7f) return false; }
+  return true;
 }
 
-// The account that owns `name` (case-insensitively), or null if free. Escapes
-// LIKE metacharacters so an underscore in the handle isn't treated as a wildcard.
-async function usernameOwner(sb: SB, name: string): Promise<number | null> {
-  const esc = name.replace(/[\\%_]/g, "\\$&");
-  const { data } = await sb.from("profiles").select("user_id,username").ilike("username", esc);
-  const row = (data || []).find((r) => String((r as { username: string }).username).toLowerCase() === name.toLowerCase());
-  return row ? Number((row as { user_id: number }).user_id) : null;
-}
-
-// Suggest an AVAILABLE username from the user's Telegram handle (or first name),
-// appending a number if the base is taken.
-async function suggestUsername(sb: SB, user: Record<string, unknown>): Promise<string> {
-  let base = handleFragment(user.username) || handleFragment(user.first_name);
-  if (base.length < 3) base = `player${Math.floor(1000 + Math.random() * 9000)}`;
-  const likeBase = base.replace(/[\\%_]/g, "\\$&");
-  const { data } = await sb.from("profiles").select("username").ilike("username", `${likeBase}%`);
-  const taken = new Set((data || []).map((r) => String((r as { username: string }).username).toLowerCase()));
-  if (!taken.has(base)) return base;
-  for (let i = 2; i < 1000; i++) { const c = `${base}${i}`; if (!taken.has(c)) return c; }
-  return `${base}${Math.floor(Math.random() * 1e6)}`;
+// The user's Telegram display name (first + last), the seed for a new profile
+// and the value auto_sync mirrors. Falls back to the @handle, then a random id.
+function tgDisplayName(user: Record<string, unknown>): string {
+  const parts = [user.first_name, user.last_name].map((x) => String(x ?? "").trim()).filter(Boolean);
+  const name = parts.join(" ").trim();
+  if (name) return name.slice(0, NAME_MAX);
+  const handle = String(user.username ?? "").trim();
+  if (handle) return handle.slice(0, NAME_MAX);
+  return `Player${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
 Deno.serve(async (req) => {
@@ -253,32 +242,27 @@ Deno.serve(async (req) => {
 
   try {
     if (op === "me") {
-      // The account's global username (null on first ever use) + an available
-      // suggestion to pre-fill the "pick a username" gate. While auto_sync is on
-      // we mirror the current Telegram @handle: adopt it if it changed and is free.
+      // The account's display name (null on first ever use) + a suggestion (the
+      // Telegram display name) to pre-fill the first-run gate. While auto_sync is
+      // on we mirror the current Telegram display name: adopt it if it changed.
+      // (`hasHandle` kept for client compat; a Telegram user always has a name.)
       if (!userId) return json({ profile: null, suggested: "", hasHandle: false });
-      const handle = handleFragment((user as { username?: unknown }).username);
-      const hasHandle = handle.length >= 3;
+      const tgName = tgDisplayName(user as Record<string, unknown>);
       const { data: p, error: pe } = await sb.from("profiles")
         .select("username,auto_sync,game_types,payout_presets").eq("user_id", userId).maybeSingle();
       if (pe) throw pe; // don't swallow: a missing table / DB blip must surface as a retryable error, never silently force the gate
-      if (!p) {
-        const suggested = await suggestUsername(sb, user as Record<string, unknown>);
-        return json({ profile: null, suggested, hasHandle });
-      }
+      if (!p) return json({ profile: null, suggested: tgName, hasHandle: true });
       let username = (p as { username: string }).username;
       const autoSync = (p as { auto_sync?: boolean }).auto_sync !== false;
-      if (autoSync && hasHandle && handle !== username.toLowerCase()) {
-        const owner = await usernameOwner(sb, handle);
-        if (owner === null || owner === userId) {
-          const { error: ue } = await sb.from("profiles")
-            .update({ username: handle, updated_at: new Date().toISOString() }).eq("user_id", userId);
-          if (!ue) username = handle;
-        }
+      // No uniqueness anymore, so mirroring just adopts the latest Telegram name.
+      if (autoSync && tgName && tgName !== username) {
+        const { error: ue } = await sb.from("profiles")
+          .update({ username: tgName, updated_at: new Date().toISOString() }).eq("user_id", userId);
+        if (!ue) username = tgName;
       }
       const gameTypes = (p as { game_types?: unknown }).game_types ?? null; // null -> first-run checklist
       const presets = (p as { payout_presets?: unknown }).payout_presets ?? [];
-      return json({ profile: { username, gameTypes, presets }, suggested: username, hasHandle });
+      return json({ profile: { username, gameTypes, presets }, suggested: username, hasHandle: true });
     }
 
     if (op === "set-prefs") {
@@ -291,7 +275,7 @@ Deno.serve(async (req) => {
         .update({ game_types: types, updated_at: new Date().toISOString() })
         .eq("user_id", userId).select("user_id");
       if (e) throw e;
-      if (!upd || !upd.length) return json({ error: "set a username first" }, 409);
+      if (!upd || !upd.length) return json({ error: "set your name first" }, 409);
       return json({ gameTypes: types });
     }
 
@@ -304,7 +288,7 @@ Deno.serve(async (req) => {
       if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) return json({ error: "bad preset values" }, 400);
       const { data: p, error: pe } = await sb.from("profiles").select("payout_presets").eq("user_id", userId).maybeSingle();
       if (pe) throw pe;
-      if (!p) return json({ error: "set a username first" }, 409);
+      if (!p) return json({ error: "set your name first" }, 409);
       const list = (Array.isArray((p as { payout_presets?: unknown }).payout_presets)
         ? (p as { payout_presets: Array<{ name?: string }> }).payout_presets : []);
       const next = [...list.filter((x) => x && x.name !== name), { name, cfg }].slice(-20); // replace same name; cap 20
@@ -315,24 +299,19 @@ Deno.serve(async (req) => {
     }
 
     if (op === "set-username") {
-      // Claim or change the account's unique username. Keeps mirroring the
-      // Telegram handle only when the chosen name IS that handle.
+      // Set the account's display name (not unique). auto_sync stays on only
+      // while the chosen name IS the current Telegram display name, so accepting
+      // the suggestion keeps it in sync and typing a custom one pins it.
       if (!userId) return json({ error: "no account" }, 401);
       const raw = String((body as { username?: string }).username || "").trim();
-      if (!USERNAME_RE.test(raw)) return json({ error: "username must be 3-20 letters, numbers or underscores" }, 400);
-      const owner = await usernameOwner(sb, raw);
-      if (owner !== null && owner !== userId) return json({ error: "that username is taken" }, 409);
-      const handle = handleFragment((user as { username?: unknown }).username);
-      const autoSync = raw.toLowerCase() === handle && handle.length >= 3;
+      if (!validName(raw)) return json({ error: `name must be 1-${NAME_MAX} characters` }, 400);
+      const autoSync = raw === tgDisplayName(user as Record<string, unknown>);
       const { data: existing } = await sb.from("profiles").select("user_id").eq("user_id", userId).maybeSingle();
       const now = new Date().toISOString();
       const { error: we } = existing
         ? await sb.from("profiles").update({ username: raw, auto_sync: autoSync, updated_at: now }).eq("user_id", userId)
         : await sb.from("profiles").insert({ user_id: userId, username: raw, auto_sync: autoSync });
-      if (we) {
-        if ((we as { code?: string }).code === "23505") return json({ error: "that username is taken" }, 409);
-        throw we;
-      }
+      if (we) throw we;
       const { data: p2 } = await sb.from("profiles").select("game_types,payout_presets").eq("user_id", userId).maybeSingle();
       return json({ profile: {
         username: raw,

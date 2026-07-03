@@ -99,15 +99,22 @@ export interface PayoutPreset {
 }
 
 export interface Profile {
-  username: string;
+  username: string;              // display name (the DB column is still `username`; not unique)
   gameTypes?: GameType[] | null; // null = first-run checklist not done yet
   presets?: PayoutPreset[];      // saved payout presets
 }
 
-/** The one client-side copy of the username rule (the server enforces the same
- *  regex — keep in sync with USERNAME_RE in supabase/functions/track/index.ts). */
-export const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
-export const USERNAME_HINT = "3–20 letters, numbers or underscores.";
+/** The one client-side copy of the display-name rule (the server enforces the
+ *  same — keep in sync with validName in supabase/functions/track/index.ts).
+ *  A display name is any 1-30 char label with no control characters. */
+export const NAME_MAX = 30;
+export const NAME_HINT = "1–30 characters.";
+export function validDisplayName(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 1 || t.length > NAME_MAX) return false;
+  for (const ch of t) { const c = ch.codePointAt(0) ?? 0; if (c < 0x20 || c === 0x7f) return false; }
+  return true;
+}
 
 /** This account's global username (null on first ever use) + an available
  *  suggestion to pre-fill the "pick a username" gate. `hasHandle` is false when
@@ -115,9 +122,8 @@ export const USERNAME_HINT = "3–20 letters, numbers or underscores.";
 export const getMe = () =>
   call<{ profile: Profile | null; suggested: string; hasHandle?: boolean }>("me", {});
 
-/** Claim or change this account's unique username. Throws "that username is
- *  taken" (409) if another account already has it. */
-export const setUsername = (username: string) => call<{ profile: Profile }>("set-username", { username });
+/** Set this account's display name (not unique — op name kept for wire compat). */
+export const setDisplayName = (username: string) => call<{ profile: Profile }>("set-username", { username });
 
 /** Save which mahjong types this account plays (first-run checklist / settings). */
 export const setPrefs = (gameTypes: GameType[]) => call<{ gameTypes: GameType[] }>("set-prefs", { gameTypes });

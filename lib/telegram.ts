@@ -24,6 +24,10 @@ interface TelegramWebApp {
   colorScheme?: "light" | "dark";
   themeParams?: Record<string, string>;
   setHeaderColor?: (c: string) => void;
+  setBackgroundColor?: (c: string) => void;
+  setBottomBarColor?: (c: string) => void;
+  onEvent?: (event: string, cb: () => void) => void;
+  offEvent?: (event: string, cb: () => void) => void;
   isVersionAtLeast?: (v: string) => boolean;
   BackButton?: {
     isVisible?: boolean;
@@ -80,15 +84,47 @@ export function useTelegram(): TelegramState {
       } catch {
         /* ignore */
       }
+      // Halcyon skin light/dark. telegram-web-app.js exists even in a plain
+      // browser (colorScheme defaults to 'light'), so only trust it on a real
+      // Telegram launch (initData present); otherwise follow the OS. In real
+      // Telegram we also paint the chrome (header/bg/bottom bar) to the Halcyon
+      // surface so there's no seam, and re-apply on the native themeChanged event.
+      const real = Boolean(wa.initData);
+      const applyTheme = () => {
+        const r = document.documentElement;
+        const dark = real ? wa.colorScheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+        r.dataset.theme = dark ? "dark" : "light";
+        r.dataset.accent = "slate";
+        if (real) {
+          try {
+            const bg = getComputedStyle(r).getPropertyValue("--bg").trim();
+            if (bg) { wa.setHeaderColor?.(bg); wa.setBackgroundColor?.(bg); wa.setBottomBarColor?.(bg); }
+          } catch { /* older client / unsupported */ }
+        }
+      };
+      applyTheme();
       const u = wa.initDataUnsafe?.user;
       setState({
         ready: true,
-        inTelegram: Boolean(wa.initData),
+        inTelegram: real,
         initData: wa.initData || "",
         user: u ? { id: u.id, name: u.first_name || u.username || String(u.id) } : null,
       });
+      if (real) {
+        wa.onEvent?.("themeChanged", applyTheme);
+        return () => wa.offEvent?.("themeChanged", applyTheme);
+      }
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      mq.addEventListener?.("change", applyTheme);
+      return () => mq.removeEventListener?.("change", applyTheme);
     } else {
+      // No Telegram script at all: follow the OS light/dark preference live.
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const onMq = () => { document.documentElement.dataset.theme = mq.matches ? "dark" : "light"; };
+      onMq();
+      mq.addEventListener?.("change", onMq);
       setState((s) => ({ ...s, ready: true }));
+      return () => mq.removeEventListener?.("change", onMq);
     }
   }, []);
 

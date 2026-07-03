@@ -1,33 +1,18 @@
+/* mahjong-web styling, driven by the Halcyon design system (app/halcyon.css).
+   The app's own semantic vars are aliased onto Halcyon tokens so every class
+   below inherits Halcyon's palette, fonts, radii and elevation. Light/dark is
+   set on <html data-theme> (follows Telegram / OS — see layout.tsx + telegram.ts);
+   the accent is data-accent="slate". */
+
 :root {
-  color-scheme: light dark;
-  /* Plain-browser fallbacks. Inside Telegram the --tg-theme-* vars are set (and
-     live-updated on theme change), so they always win over the fallbacks. */
-  --bg-fallback: #ffffff;
-  --text-fallback: #111111;
-  --hint-fallback: #888888;
-  --secondary-bg-fallback: #f1f1f4;
-  --bg: var(--tg-theme-bg-color, var(--bg-fallback));
-  --text: var(--tg-theme-text-color, var(--text-fallback));
-  --hint: var(--tg-theme-hint-color, var(--hint-fallback));
-  --secondary-bg: var(--tg-theme-secondary-bg-color, var(--secondary-bg-fallback));
-  --button: var(--tg-theme-button-color, #2ea6ff);
-  --button-text: var(--tg-theme-button-text-color, #ffffff);
-  /* Money / status colors */
-  --pos: #1f9d55;
-  --neg: #e54848;
+  --hint: var(--text-muted);
+  --secondary-bg: var(--surface);
+  --button: var(--accent);
+  --button-text: var(--accent-fg);
+  --pos: var(--success-text);
+  --neg: var(--danger-text);
   /* iPhone home-indicator (and similar) inset; Telegram sets its own var. */
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-fallback: #1c1c1e;
-    --text-fallback: #f2f2f6;
-    --hint-fallback: #98989e;
-    --secondary-bg-fallback: #2c2c2e;
-    --pos: #34c47c;
-    --neg: #ff6b6b;
-  }
 }
 
 * {
@@ -36,56 +21,89 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   background: var(--bg);
   color: var(--text);
-  padding: 14px 14px calc(96px + var(--safe-bottom));
+  padding: 16px 16px calc(96px + var(--safe-bottom));
   -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1 {
-  font-size: 1.15rem;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
   margin: 0 0 16px;
 }
 
+/* Section labels — Halcyon "eyebrow": mono, uppercase, tracked, faint. */
 h2 {
-  font-size: 0.78rem;
-  margin: 18px 0 7px;
-  color: var(--hint);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  font-weight: var(--weight-medium);
+  margin: 20px 0 8px;
+  color: var(--text-faint);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-widest);
 }
 
 small {
-  color: var(--hint);
-  font-weight: 400;
+  color: var(--text-muted);
+  font-weight: var(--weight-regular);
+}
+
+a {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+::selection {
+  background: var(--accent-subtle-strong);
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 8px;
 }
 
+/* Chips — Halcyon secondary button; selected/on = accent fill. */
 .chip {
-  border: 1px solid var(--hint);
-  border-radius: 9px;
-  padding: 9px 12px;
-  font-size: 0.9rem;
-  background: var(--secondary-bg);
-  color: inherit;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 8px 13px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
   user-select: none;
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out);
+}
+
+.chip:hover {
+  border-color: var(--text-faint);
+  background: var(--surface-hover);
 }
 
 .chip.selected,
 .chip.on {
-  background: var(--button);
-  color: var(--button-text);
+  background: var(--accent);
+  color: var(--accent-fg);
   border-color: transparent;
 }
 
-/* Big choice buttons (game picker) */
+.chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Big choice buttons (menus) — Halcyon interactive card. */
 .choices {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -93,73 +111,123 @@ small {
 }
 
 .choice-btn {
-  padding: 22px 12px;
-  border: 1px solid var(--hint);
-  border-radius: 14px;
-  background: var(--secondary-bg);
-  color: inherit;
-  font-size: 1.05rem;
-  font-weight: 600;
+  padding: 20px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
   text-align: center;
   cursor: pointer;
-  line-height: 1.5;
+  line-height: 1.4;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.choice-btn:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
 }
 
 .choice-btn small {
   display: block;
-  font-size: 0.75rem;
-  font-weight: 400;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  color: var(--text-muted);
+  margin-top: 3px;
 }
 
 /* Multi-select variant (game-type checklist) */
 .choice-btn.selected-choice {
-  background: var(--button);
-  color: var(--button-text);
+  background: var(--accent);
+  color: var(--accent-fg);
   border-color: transparent;
+}
+
+.choice-btn.selected-choice small {
+  color: color-mix(in srgb, var(--accent-fg) 78%, transparent);
 }
 
 /* Primary action button, fixed to the bottom (padded above the home indicator) */
 .primary-btn {
   position: fixed;
   bottom: calc(16px + var(--safe-bottom));
-  left: 14px;
-  right: 14px;
-  padding: 15px;
+  left: 16px;
+  right: 16px;
+  padding: 14px;
   border: none;
-  border-radius: 11px;
-  background: var(--button);
-  color: var(--button-text);
-  font-size: 1rem;
-  font-weight: 600;
+  border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: background var(--dur) var(--ease-out);
+}
+
+.primary-btn:hover {
+  background: var(--accent-hover);
 }
 
 .primary-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: default;
 }
 
 .link-btn {
   background: none;
   border: none;
-  color: var(--button);
-  font-size: 0.85rem;
+  color: var(--accent-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   cursor: pointer;
   padding: 0;
   margin-top: 14px;
 }
 
-/* Text inputs */
+/* Text inputs + selects — Halcyon input. */
 .text-input {
   display: block;
   width: 100%;
-  padding: 10px 12px;
-  margin-bottom: 7px;
-  border: 1px solid var(--hint);
-  border-radius: 9px;
-  background: var(--secondary-bg);
-  color: inherit;
-  font-size: 0.95rem;
+  padding: 9px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.text-input::placeholder {
+  color: var(--text-faint);
+}
+
+.text-input:hover {
+  border-color: var(--text-faint);
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.text-input:disabled {
+  background: var(--bg-subtle);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+select.text-input {
+  cursor: pointer;
 }
 
 .text-input.small {
@@ -169,32 +237,40 @@ small {
 .vlabel {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 0.78rem;
-  color: var(--hint);
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
 .vlabel .text-input {
   margin-bottom: 0;
 }
 
-/* Balances + log */
+/* Balances + log — Halcyon card. */
 .balances {
-  border-radius: 12px;
-  background: var(--secondary-bg);
-  padding: 6px 12px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+  padding: 4px 14px;
 }
 
 .bal-row {
   display: flex;
   justify-content: space-between;
-  padding: 6px 0;
-  font-size: 0.95rem;
+  padding: 9px 0;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.bal-row:last-child {
+  border-bottom: 0;
 }
 
 .bal {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .bal.pos {
@@ -207,14 +283,14 @@ small {
 
 /* Inline error text */
 .err {
-  color: var(--neg);
-  font-size: 0.85rem;
+  color: var(--danger-text);
+  font-size: var(--text-sm);
 }
 
 .log {
-  font-size: 0.85rem;
-  color: var(--hint);
-  line-height: 1.7;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: var(--leading-relaxed);
 }
 
 /* Tile picker */
@@ -232,18 +308,19 @@ small {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--hint);
-  border-radius: 7px;
-  background: var(--secondary-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   cursor: pointer;
   user-select: none;
 }
 
 .tile-btn.has {
-  background: var(--button);
-  color: var(--button-text);
+  background: var(--accent);
+  color: var(--accent-fg);
   border-color: transparent;
 }
 
@@ -264,8 +341,8 @@ small {
 
 /* Rack tiles (in the selected-hand row) */
 .rack-tile {
-  background: var(--secondary-bg);
-  border-color: var(--hint);
+  background: var(--surface);
+  border-color: var(--border-strong);
 }
 
 .tile-badge {
@@ -275,9 +352,10 @@ small {
   min-width: 16px;
   height: 16px;
   padding: 0 3px;
-  border-radius: 8px;
-  background: var(--neg);
-  color: #fff;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+  color: var(--on-status);
+  font-family: var(--font-mono);
   font-size: 0.65rem;
   line-height: 16px;
   text-align: center;
@@ -285,14 +363,15 @@ small {
 
 /* Step wizard (record action): one question per screen */
 .wizard-crumb {
-  font-size: 0.85rem;
-  color: var(--hint);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
   margin: 0 0 2px;
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 
 .wizard-crumb strong {
   color: var(--text);
+  font-weight: var(--weight-semibold);
 }
 
 .num-grid {
@@ -303,21 +382,31 @@ small {
 
 .num-btn {
   padding: 11px 0;
-  border: 1px solid var(--hint);
-  border-radius: 11px;
-  background: var(--secondary-bg);
-  color: inherit;
-  font-size: 1.05rem;
-  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
   text-align: center;
   cursor: pointer;
   user-select: none;
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+
+.num-btn:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .num-btn small {
   display: block;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
-  font-weight: 400;
+  font-weight: var(--weight-regular);
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -338,18 +427,20 @@ small {
 .pay-row .text-input {
   width: 100%;
   margin-bottom: 0;
+  font-family: var(--font-mono);
 }
 
 .pay-tai {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  opacity: 0.7;
-  font-size: 0.85rem;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
   text-align: center;
 }
 
 .pay-head {
-  font-size: 0.75rem;
-  color: var(--hint);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
   margin-bottom: 2px;
 }
 
@@ -360,7 +451,11 @@ small {
 
 /* Invalid numeric cell */
 .text-input.bad {
-  border-color: var(--neg);
+  border-color: var(--danger);
+}
+
+.text-input.bad:focus {
+  box-shadow: 0 0 0 3px var(--danger-subtle);
 }
 
 /* Declared meld rows */
@@ -373,16 +468,20 @@ small {
 }
 
 .meld-label {
-  font-size: 0.78rem;
-  color: var(--hint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-muted);
   margin-left: 6px;
 }
 
 /* Meld builder panel */
 .meld-builder {
-  padding: 10px;
-  border: 1px solid var(--hint);
-  border-radius: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
   margin-bottom: 10px;
 }
 
@@ -403,30 +502,33 @@ small {
 /* Result card */
 .result {
   margin-top: 22px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   padding: 18px;
-  background: var(--secondary-bg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .result .total {
+  font-family: var(--font-mono);
   font-size: 2rem;
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
 .result .limit {
-  color: var(--button);
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  color: var(--accent-text);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
 }
 
 .result .line {
   margin-top: 6px;
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
 }
 
 .result .yaku {
   margin-top: 8px;
-  font-size: 0.85rem;
-  color: var(--hint);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }

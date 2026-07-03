@@ -13,7 +13,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 
 | Path | What |
 |---|---|
-| `app/` | Next.js 15 App Router shell; `globals.css` = all styling (Telegram `--tg-theme-*` vars + dark fallbacks) |
+| `app/` | Next.js 15 App Router shell. Styling = the **Halcyon design system**: `app/halcyon.css` (vendored tokens from `E:\Claude\halcyon-ds`) + `globals.css` (classes driven by Halcyon tokens/fonts/radii/shadows). Light/dark set on `<html data-theme>` — follows Telegram's colorScheme on a real launch, else the OS (`layout.tsx` boot script + `lib/telegram.ts`); accent `data-accent="slate"`. Re-vendor by re-concatenating the halcyon-ds token files into `app/halcyon.css`. |
 | `components/SGGame.tsx` | Tracker **router + home** (boot gates: username → game-types checklist; game-type dropdown; groups w/ balances + manual reorder; deep links; screen union) |
 | `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join`, `Setup` (create group + usual-type + default payouts), `Group` (**debt counter + session banner + session setup w/ payout presets**), `Play` (session balances, log, **record-action wizard**) |
 | `components/RiichiCalculator.tsx`, `TilesMode.tsx`, `ResultCard.tsx` | Riichi calculator UI |

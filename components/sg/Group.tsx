@@ -7,6 +7,7 @@
 import { useMemo, useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
 import { PayoutConfig, money } from "@/lib/sg/payout";
+import { PayoutScaleInfo } from "./InfoDot";
 import {
   TrackerState,
   PayoutPreset,
@@ -207,6 +208,9 @@ export function NewSession({
       : {};
     return {
       ...keep,
+      // Self-draw bonus is set at group creation and has no field here, so carry
+      // it straight through from the picked scheme (independent of the table).
+      ...(picked?.cfg.zimoBonus ? { zimoBonus: picked.cfg.zimoBonus } : {}),
       tai: num(fields.discard, 0.4),
       zimo: num(fields.zimo, num(fields.discard, 0.4) * 2),
       yao: num(fields.yao, 0.1),
@@ -281,20 +285,24 @@ export function NewSession({
           <label className="vlabel">shooter pays
             <input className="text-input small" inputMode="decimal" value={fields.discard} disabled={!settle}
               onChange={(e) => setFields((f) => ({ ...f, discard: e.target.value }))} /></label>
-          <label className="vlabel">self-draw (each)
+          <label className="vlabel">self-draw (zimo, each)
             <input className="text-input small" inputMode="decimal" value={fields.zimo} disabled={!settle}
-              onChange={(e) => setFields((f) => ({ ...f, zimo: e.target.value }))} /></label>
+              onChange={(e) => setFields((f) => ({ ...f, zimo: e.target.value }))} />
+            <span className="unit">per pax</span></label>
           <label className="vlabel">max tai
             <input className="text-input small" inputMode="numeric" value={fields.maxTai} disabled={!settle}
               onChange={(e) => setFields((f) => ({ ...f, maxTai: e.target.value }))} /></label>
         </div>
         <div className="row" style={{ alignItems: "center" }}>
+          <h2 className="info-head" style={{ margin: "6px 0 0", width: "100%" }}>Bite &amp; kong <PayoutScaleInfo /></h2>
           <label className="vlabel">bite (yao)
             <input className="text-input small" inputMode="decimal" value={fields.yao} disabled={!settle || !yaoOn}
-              onChange={(e) => setFields((f) => ({ ...f, yao: e.target.value }))} /></label>
+              onChange={(e) => setFields((f) => ({ ...f, yao: e.target.value }))} />
+            <span className="unit">per pax</span></label>
           <label className="vlabel">kong (gang)
             <input className="text-input small" inputMode="decimal" value={fields.gang} disabled={!settle || !gangOn}
-              onChange={(e) => setFields((f) => ({ ...f, gang: e.target.value }))} /></label>
+              onChange={(e) => setFields((f) => ({ ...f, gang: e.target.value }))} />
+            <span className="unit">per pax</span></label>
         </div>
         <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6 }}>
           <button type="button" className="chip" onClick={halve}>Halve payouts</button>

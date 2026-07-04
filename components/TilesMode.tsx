@@ -4,18 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import { analyze, WinContext, CalledMeld } from "@/lib/riichi/analyze";
 import ResultCard from "./ResultCard";
 
-// Unicode mahjong tile emoji
-const TILE_EMOJI: Record<string, string> = {
-  "1C": "🀇", "2C": "🀈", "3C": "🀉", "4C": "🀊", "5C": "🀋",
-  "6C": "🀌", "7C": "🀍", "8C": "🀎", "9C": "🀏",
-  "1B": "🀐", "2B": "🀑", "3B": "🀒", "4B": "🀓", "5B": "🀔",
-  "6B": "🀕", "7B": "🀖", "8B": "🀗", "9B": "🀘",
-  "1D": "🀙", "2D": "🀚", "3D": "🀛", "4D": "🀜", "5D": "🀝",
-  "6D": "🀞", "7D": "🀟", "8D": "🀠", "9D": "🀡",
-  "EW": "🀀", "SW": "🀁", "WW": "🀂", "NW": "🀃",
-  "WD": "🀆", "GD": "🀅", "RD": "🀄",
-};
-const te = (code: string) => TILE_EMOJI[code] ?? code;
+// Tile images (Japanese / Riichi set) served from public/tiles/jp. The file
+// name is the engine code with a "jp" prefix (jp1C.png, jpEW.png, ...). basePath
+// is prefixed so assets resolve both locally ("") and on GitHub Pages
+// ("/mahjong-bot"). Swap TILE_BASE / prefix to use a different tile art set.
+const TILE_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || "") + "/tiles/jp/";
+const tileSrc = (code: string) => `${TILE_BASE}jp${code}.png`;
+
+function TileImg({ code, className }: { code: string; className?: string }) {
+  // Plain <img> is intentional: the app is a static export (next/image's loader
+  // is disabled via images.unoptimized) and these are tiny local PNGs.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img className={"tile-img" + (className ? " " + className : "")} src={tileSrc(code)} alt={code} draggable={false} />;
+}
 
 const SUITS = ["C", "D", "B"];
 const HONORS = ["EW", "SW", "WW", "NW", "WD", "GD", "RD"];
@@ -60,10 +61,10 @@ function TileBtn({
 }) {
   return (
     <div
-      className={"tile-btn tile-emoji" + (selected ? " has" : "") + (disabled ? " tile-dim" : "")}
+      className={"tile-btn tile-pic" + (selected ? " has" : "") + (disabled ? " tile-dim" : "")}
       onClick={disabled ? undefined : onClick}
     >
-      {te(code)}
+      <TileImg code={code} />
       {(count ?? 0) > 0 && <span className="tile-badge">{count}</span>}
     </div>
   );
@@ -210,7 +211,7 @@ export default function TilesMode({
           {melds.map((m, i) => (
             <div key={i} className="meld-row">
               {m.codes.map((c, j) => (
-                <div key={j} className="tile-btn tile-emoji">{te(c)}</div>
+                <div key={j} className="tile-btn tile-pic sm"><TileImg code={c} /></div>
               ))}
               <span className="meld-label">{meldLabel(m)}</span>
               <button className="link-btn" style={{ marginTop: 0, marginLeft: 6, fontSize: "0.8rem" }}
@@ -229,7 +230,7 @@ export default function TilesMode({
             </span>
             {bld.codes.length > 0 && (
               <span className="meld-preview-tiles">
-                {bld.codes.map(te).join("")}
+                {bld.codes.map((c, i) => <TileImg key={i} code={c} className="sm" />)}
               </span>
             )}
             {bld.codes.length === bld.target && (
@@ -316,8 +317,8 @@ export default function TilesMode({
           <div className="row" style={{ gap: 4 }}>
             {Object.entries(counts).flatMap(([c, n]) =>
               RANGE(n).map(i => (
-                <div key={`${c}-${i}`} className="tile-btn tile-emoji rack-tile" onClick={() => remove(c)}>
-                  {te(c)}
+                <div key={`${c}-${i}`} className="tile-btn tile-pic sm rack-tile" onClick={() => remove(c)}>
+                  <TileImg code={c} />
                 </div>
               ))
             )}
@@ -332,9 +333,9 @@ export default function TilesMode({
           <div className="row" style={{ gap: 4 }}>
             {Object.keys(counts).map(c => (
               <div key={c}
-                className={"tile-btn tile-emoji" + (winTile === c ? " has" : "")}
+                className={"tile-btn tile-pic sm" + (winTile === c ? " has" : "")}
                 onClick={() => setWinTile(c === winTile ? null : c)}>
-                {te(c)}
+                <TileImg code={c} />
               </div>
             ))}
           </div>

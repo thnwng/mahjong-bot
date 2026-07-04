@@ -28,6 +28,9 @@ export interface PayoutConfig {
   /** Session toggles: record bite (yao) / kong (gang) payouts? Default true. */
   yaoOn?: boolean;
   gangOn?: boolean;
+  /** Flat self-draw (zimo) bonus: an extra amount EACH other player pays on a
+   *  self-draw, on top of the per-tai self-draw amount. Default 0. */
+  zimoBonus?: number;
 }
 
 /** Default payouts — the sgmahjong.club 10¢/20¢ table: shooter 0.40 / self-draw
@@ -35,6 +38,8 @@ export interface PayoutConfig {
 export const DEFAULT_PAYOUT: PayoutConfig = { tai: 0.4, zimo: 0.2, yao: 0.1, gang: 0.1 };
 
 export const maxTaiOf = (c: PayoutConfig): number => c.maxTai ?? LIMIT_TAI;
+/** Flat extra each other player pays on a self-draw (0 = none). */
+export const zimoBonusOf = (c: PayoutConfig): number => c.zimoBonus ?? 0;
 export const capOf = (c: PayoutConfig): number => c.cap ?? maxTaiOf(c);
 /** Self-draw 1-tai base; defaults to twice the discard base (house rule). */
 export const zimoBaseOf = (c: PayoutConfig): number => (c.zimo ?? c.tai * 2);

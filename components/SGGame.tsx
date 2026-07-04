@@ -12,6 +12,7 @@ import { Setup } from "@/components/sg/Setup";
 import { GroupScreen, NewSession } from "@/components/sg/Group";
 import { Play } from "@/components/sg/Play";
 import { Settings } from "@/components/sg/Settings";
+import { SGTiles } from "@/components/sg/SGTiles";
 import {
   syncEnabled,
   parseStartParam,
@@ -38,6 +39,7 @@ import {
 type Screen =
   | { t: "home" }
   | { t: "settings" }
+  | { t: "tiles" }                             // SG/Msia tile picker (tai helper)
   | { t: "create" }
   | { t: "join" }                              // type a group code
   | { t: "joining"; state: TrackerState }      // pick which seat you are
@@ -328,6 +330,9 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
         : <div><h1>Settings</h1><p className="err">Open this inside Telegram to manage your profile.</p>
             <button className="link-btn" onClick={goHome}>← Back</button></div>;
 
+    case "tiles":
+      return <SGTiles onBack={goHome} />;
+
     case "home": {
       const types: GameType[] = profile?.gameTypes?.length ? profile.gameTypes : ["sg4"];
       const shownTab: GameType = types.includes(tab) ? tab : (types.find((t) => t !== "riichi") ?? types[0]);
@@ -424,6 +429,12 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
                   style={canSync ? undefined : { opacity: 0.5, cursor: "not-allowed" }}>Join with a code<small>enter a shared code</small></div>
               </div>
             </>
+          )}
+
+          {(shownTab === "sg4" || shownTab === "my3") && (
+            <div style={{ marginTop: 12 }}>
+              <button className="link-btn" onClick={() => setScreen({ t: "tiles" })}>Tai calculator (tiles) →</button>
+            </div>
           )}
 
           {!types.includes("riichi") || types.length === 1 ? (

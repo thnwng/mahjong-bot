@@ -15,13 +15,11 @@ import {
   discardValue,
   zimoEachValue,
   maxTaiOf,
+  zimoBonusOf,
   money,
-  settleDiscardWin,
-  settleSelfDraw,
-  settleYao,
-  settleGang,
   applyTransfers,
 } from "@/lib/sg/payout";
+import { Action, stepsFor, buildResult, shootValue } from "@/lib/sg/actions";
 import { getState, addRemoteAction, renameSeat, endSession, TrackerState, ActionMeta, BOT_APP_LINK } from "@/lib/sg/remote";
 
 type LogEntry = { summary: string; transfers: Transfer[]; actioner?: string; meta?: ActionMeta | null };
@@ -35,8 +33,14 @@ function renderLogLine(e: LogEntry): string {
   switch (m.k) {
     case "hu": return `Hu: ${m.winner} wins off ${m.discarder}${m.tai ? ` (${m.tai} tai)` : ""}`;
     case "zimo": return `Zimo: ${m.winner} self-draws${m.tai ? ` (${m.tai} tai)` : ""}`;
-    case "gang": return `Gang: ${m.konger} kong${m.payer ? ` off ${m.payer}` : " (all pay)"}`;
-    case "yao": return `Yao: ${m.biter} bite${m.target ? ` on ${m.target}` : " (all pay)"}`;
+    case "gang": {
+      const how = m.mode === "an" ? "concealed kong (angang)" : m.payer ? `kong off ${m.payer}` : "self-kong (all pay)";
+      return `Gang: ${m.konger} ${how}`;
+    }
+    case "yao": {
+      const kind = m.concealed ? "concealed bite (anyao)" : "bite";
+      return `${m.concealed ? "Anyao" : "Yao"}: ${m.biter} ${kind}${m.target ? ` on ${m.target}` : " (all pay)"}`;
+    }
     default: return e.summary;
   }
 }
@@ -49,8 +53,6 @@ function computeBalances(players: string[], log: { transfers: Transfer[] }[]): R
 
 // ------------------------------------------------------------- action wizard
 
-type Action = "hu" | "zimo" | "gang" | "yao";
-
 const ACTION_TITLES: Record<Action, { title: string; sub: string }> = {
   hu: { title: "Hu", sub: "win off a discard" },
   zimo: { title: "Zimo", sub: "self-draw" },
@@ -58,111 +60,53 @@ const ACTION_TITLES: Record<Action, { title: string; sub: string }> = {
   yao: { title: "Yao", sub: "bite" },
 };
 
-type Opt = { v: string; label: string; hint?: string };
-type StepDef = {
-  key: string;
-  title: string;
-  kind: "people" | "nums" | "choice";
-  options: Opt[];
-  crumb: (v: string) => string;
-};
+// The "X shoot Y" transfer bubble: a payer dropdown, the word "shoot", and the
+// receiver. When `fixedReceiver` is set (Gang/Yao — the konger/biter is already
+// chosen) that side is locked; for Hu both ends are picked here. The payer list
+// excludes the receiver, so a player can never shoot themselves. As soon as a
+// valid (different) pair is chosen it commits and the wizard advances.
+function ShootSelect({
+  players,
+  fixedReceiver,
+  onPick,
+}: {
+  players: string[];
+  fixedReceiver?: string;
+  onPick: (v: string) => void;
+}) {
+  const [payer, setPayer] = useState("");
+  const [freeReceiver, setFreeReceiver] = useState("");
+  const rcv = fixedReceiver ?? freeReceiver;
+  const payerOpts = players.filter((p) => p !== rcv);
+  const receiverOpts = players.filter((p) => p !== payer);
+  const tryCommit = (pa: string, re: string) => { if (pa && re && pa !== re) onPick(shootValue(pa, re)); };
 
-// The ordered questions for an action, given the answers so far. Later steps
-// depend on earlier answers (a discarder list excludes the winner; the
-// "whose discard" step only exists when one person pays), so this recomputes
-// each render — going back re-derives everything consistently.
-function stepsFor(action: Action, picks: Record<string, string>, players: string[], bases: PayoutConfig, settle: boolean): StepDef[] {
-  const people = (exclude?: string): Opt[] =>
-    players.filter((p) => p !== exclude).map((p) => ({ v: p, label: p }));
-  const taiOpts = (value: (n: number) => string): Opt[] =>
-    Array.from({ length: maxTaiOf(bases) }, (_, i) => ({ v: String(i + 1), label: String(i + 1), hint: value(i + 1) }));
-
-  if (action === "hu") {
-    return [
-      { key: "winner", title: "Who won?", kind: "people", options: people(), crumb: (v) => v },
-      { key: "discarder", title: "Off whose discard?", kind: "people", options: people(picks.winner), crumb: (v) => `off ${v}` },
-      // No-payout sessions just log the win — tai doesn't matter.
-      ...(settle ? [{ key: "tai", title: "How many tai?", kind: "nums", options: taiOpts((n) => money(discardValue(bases, n))), crumb: (v: string) => `${v} tai` } as StepDef] : []),
-    ];
-  }
-  if (action === "zimo") {
-    return [
-      { key: "winner", title: "Who self-drew?", kind: "people", options: people(), crumb: (v) => v },
-      ...(settle ? [{ key: "tai", title: "How many tai?", kind: "nums", options: taiOpts((n) => `${money(zimoEachValue(bases, n))} each`), crumb: (v: string) => `${v} tai` } as StepDef] : []),
-    ];
-  }
-  if (action === "gang") {
-    const steps: StepDef[] = [
-      { key: "konger", title: "Who konged?", kind: "people", options: people(), crumb: (v) => v },
-      {
-        key: "scope", title: "Who pays?", kind: "choice",
-        options: [
-          { v: "everyone", label: "Everyone", hint: "self-drawn or concealed kong" },
-          { v: "one", label: "One player", hint: "kong off a discard" },
-        ],
-        crumb: (v) => (v === "everyone" ? "everyone pays" : "one pays"),
-      },
-    ];
-    if (picks.scope === "one") {
-      steps.push({ key: "payer", title: "Whose discard?", kind: "people", options: people(picks.konger), crumb: (v) => `off ${v}` });
-    }
-    return steps;
-  }
-  // yao
-  const steps: StepDef[] = [
-    { key: "biter", title: "Who bit?", kind: "people", options: people(), crumb: (v) => v },
-    {
-      key: "scope", title: "Who pays?", kind: "choice",
-      options: [
-        { v: "everyone", label: "Everyone", hint: "each other player pays" },
-        { v: "one", label: "One player", hint: "bite on one person" },
-      ],
-      crumb: (v) => (v === "everyone" ? "everyone pays" : "one pays"),
-    },
-  ];
-  if (picks.scope === "one") {
-    steps.push({ key: "target", title: "Who pays?", kind: "people", options: people(picks.biter), crumb: (v) => `on ${v}` });
-  }
-  return steps;
-}
-
-function buildResult(
-  action: Action,
-  picks: Record<string, string>,
-  players: string[],
-  bases: PayoutConfig,
-  settle: boolean,
-): { summary: string; transfers: Transfer[]; meta: ActionMeta } {
-  if (action === "hu") {
-    const tai = settle ? parseInt(picks.tai) : 0;
-    return {
-      summary: `Hu: ${picks.winner} wins off ${picks.discarder}${tai ? ` (${tai} tai)` : ""}`,
-      transfers: settle ? settleDiscardWin(picks.winner, picks.discarder, discardValue(bases, tai)) : [],
-      meta: { k: "hu", tai, winner: picks.winner, discarder: picks.discarder },
-    };
-  }
-  if (action === "zimo") {
-    const tai = settle ? parseInt(picks.tai) : 0;
-    return {
-      summary: `Zimo: ${picks.winner} self-draws${tai ? ` (${tai} tai)` : ""}`,
-      transfers: settle ? settleSelfDraw(picks.winner, zimoEachValue(bases, tai), players) : [],
-      meta: { k: "zimo", tai, winner: picks.winner },
-    };
-  }
-  if (action === "gang") {
-    const payer = picks.scope === "one" ? picks.payer : null;
-    return {
-      summary: `Gang: ${picks.konger} kong${payer ? ` off ${payer}` : " (all pay)"}`,
-      transfers: settleGang(picks.konger, bases.gang, players, payer),
-      meta: { k: "gang", konger: picks.konger, payer: payer ?? null },
-    };
-  }
-  const target = picks.scope === "one" ? picks.target : null;
-  return {
-    summary: `Yao: ${picks.biter} bite${target ? ` on ${target}` : " (all pay)"}`,
-    transfers: settleYao(picks.biter, bases.yao, players, target),
-    meta: { k: "yao", biter: picks.biter, target: target ?? null },
-  };
+  return (
+    <div>
+      <div className="shoot-box">
+        <select className="text-input shoot-sel" value={payer}
+          onChange={(e) => { haptic("selection"); setPayer(e.target.value); tryCommit(e.target.value, rcv); }}>
+          <option value="">— who —</option>
+          {payerOpts.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <span className="shoot-word">shoot</span>
+        {fixedReceiver ? (
+          <select className="text-input shoot-sel" value={fixedReceiver} disabled aria-label="receiver (fixed)">
+            <option value={fixedReceiver}>{fixedReceiver}</option>
+          </select>
+        ) : (
+          <select className="text-input shoot-sel" value={freeReceiver}
+            onChange={(e) => { haptic("selection"); setFreeReceiver(e.target.value); tryCommit(payer, e.target.value); }}>
+            <option value="">— who —</option>
+            {receiverOpts.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        )}
+      </div>
+      <p style={{ fontSize: "0.75rem", color: "var(--text-faint)", marginTop: 6 }}>
+        The player on the left pays the one on the right. A player can&apos;t shoot themselves.
+      </p>
+    </div>
+  );
 }
 
 function ActionWizard({
@@ -240,6 +184,8 @@ function ActionWizard({
             </div>
           ))}
         </div>
+      ) : current.kind === "shoot" ? (
+        <ShootSelect players={players} fixedReceiver={current.fixedReceiver} onPick={(v) => pick(current.key, v)} />
       ) : (
         <div className="choices">
           {current.options.map((o) => (
@@ -310,6 +256,7 @@ function Dashboard({
           </div>
           <p style={{ fontSize: "0.78rem", opacity: 0.65 }}>
             Payouts · 1 tai: shooter {money(discardValue(bases, 1))} / self-draw {money(zimoEachValue(bases, 1))} each
+            {zimoBonusOf(bases) > 0 ? ` (+${money(zimoBonusOf(bases))} zimo bonus)` : ""}
             {yaoOn ? ` · bite ${money(bases.yao)}` : ""}{gangOn ? ` · kong ${money(bases.gang)} each` : ""} · up to {maxTaiOf(bases)} tai
           </p>
         </>

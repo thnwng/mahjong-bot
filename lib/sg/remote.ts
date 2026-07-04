@@ -34,8 +34,12 @@ export interface Session {
 export type ActionMeta =
   | { k: "hu"; tai: number; winner: string; discarder: string }
   | { k: "zimo"; tai: number; winner: string }
-  | { k: "gang"; konger: string; payer: string | null }
-  | { k: "yao"; biter: string; target: string | null };
+  // mode: "zimo" = drawn/added kong (everyone pays), "shoot" = kong off a
+  // discard (that one person pays the full 3x), "an" = concealed (everyone
+  // pays double). Optional so pre-existing rows still parse.
+  | { k: "gang"; konger: string; payer: string | null; mode?: "zimo" | "shoot" | "an" }
+  // concealed = anyao (bite paid at double). Optional for back-compat.
+  | { k: "yao"; biter: string; target: string | null; concealed?: boolean };
 
 export interface RemoteAction {
   id: string;
@@ -101,7 +105,17 @@ export interface PayoutPreset {
 /** Built-in payout schemes offered in the scheme dropdowns (group setup +
  *  session start), before the account's own saved presets. */
 export const BUILTIN_PRESETS: PayoutPreset[] = [
-  { name: "sgmahjong.club (10¢/20¢)", cfg: { tai: 0.4, zimo: 0.2, yao: 0.1, gang: 0.1, maxTai: 10 } },
+  { name: "10¢/20¢", cfg: { tai: 0.4, zimo: 0.2, yao: 0.1, gang: 0.1, maxTai: 10 } },
+  { name: "20¢/40¢", cfg: { tai: 0.8, zimo: 0.4, yao: 0.2, gang: 0.2, maxTai: 10 } },
+  // 30¢/60¢ is an irregular house table (tai 1-3 are rounded, not pure
+  // doubling), so store the exact per-tai amounts. tai/zimo are the row-1 bases.
+  { name: "30¢/60¢", cfg: {
+      tai: 4, zimo: 2, yao: 2, gang: 3, maxTai: 10,
+      zimoTable: [2, 3, 5, 10, 20, 40, 80, 160, 320, 640],
+      discardTable: [4, 7, 11, 20, 40, 80, 160, 320, 640, 1280],
+    } },
+  { name: "50¢/$1", cfg: { tai: 4, zimo: 2, yao: 3, gang: 3, maxTai: 10 } },
+  { name: "$1/$2", cfg: { tai: 8, zimo: 4, yao: 5, gang: 5, maxTai: 10 } },
 ];
 
 export interface Profile {

@@ -10,6 +10,7 @@ import { useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
 import { PayoutConfig, discardValue, zimoEachValue, money } from "@/lib/sg/payout";
 import { GameType, PayoutPreset, BUILTIN_PRESETS } from "@/lib/sg/remote";
+import { PayoutScaleInfo } from "./InfoDot";
 
 type Row = { z: string; d: string }; // z = zimo (self-draw each), d = shoot (shooter pays)
 const CUSTOM = "__custom__";
@@ -54,6 +55,7 @@ export function Setup({
   const [rows, setRows] = useState<Row[]>(() => fillRows(schemes[0].cfg, schemes[0].cfg.maxTai ?? 10));
   const [yao, setYao] = useState(money(schemes[0].cfg.yao ?? 0.1));
   const [gang, setGang] = useState(money(schemes[0].cfg.gang ?? 0.1));
+  const [zbonus, setZbonus] = useState(money(schemes[0].cfg.zimoBonus ?? 0)); // flat self-draw bonus
 
   const num = (s: string) => parseFloat(s);
   const okNum = (s: string) => { const v = num(s); return isFinite(v) && v >= 0; };
@@ -69,6 +71,7 @@ export function Setup({
     setRows(fillRows(s.cfg, s.cfg.maxTai ?? 10));
     setYao(money(s.cfg.yao ?? 0.1));
     setGang(money(s.cfg.gang ?? 0.1));
+    setZbonus(money(s.cfg.zimoBonus ?? 0));
   };
 
   // Editing any cell means the table no longer matches a named scheme.
@@ -108,6 +111,7 @@ export function Setup({
       zimo: zTab[0],
       yao: okNum(yao) ? num(yao) : 0.1,
       gang: okNum(gang) ? num(gang) : 0.1,
+      zimoBonus: okNum(zbonus) ? num(zbonus) : 0,
       maxTai: mt,
       discardTable: dTab,
       zimoTable: zTab,
@@ -148,6 +152,28 @@ export function Setup({
         </select>
       </label>
 
+      <h2 className="info-head">Bite, kong &amp; self-draw bonus <PayoutScaleInfo /></h2>
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <label className="vlabel">bite (yao)
+          <input className="text-input small" inputMode="decimal" value={yao}
+            onChange={(e) => { setYao(e.target.value); setScheme(CUSTOM); }} />
+          <span className="unit">per pax</span></label>
+        <label className="vlabel">kong (gang)
+          <input className="text-input small" inputMode="decimal" value={gang}
+            onChange={(e) => { setGang(e.target.value); setScheme(CUSTOM); }} />
+          <span className="unit">per pax</span></label>
+        <label className="vlabel">self-draw (zimo) bonus
+          <input className="text-input small" inputMode="decimal" value={zbonus}
+            onChange={(e) => { setZbonus(e.target.value); setScheme(CUSTOM); }} />
+          <span className="unit">per pax</span></label>
+      </div>
+      <div className="row" style={{ alignItems: "center", gap: 6, marginTop: 4, marginBottom: 4 }}>
+        <span style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>Self-draw bonus · frequently used</span>
+        {[2, 3, 5].map((v) => (
+          <div key={v} className="chip" onClick={() => { setZbonus(money(v)); setScheme(CUSTOM); }}>{`$${v}`}</div>
+        ))}
+      </div>
+
       {/* Per-tai table: Tai | Zimo (self-draw each) | Shoot (shooter pays) */}
       <div className="pay-table">
         <div className="pay-row pay-head">
@@ -172,15 +198,9 @@ export function Setup({
         <button type="button" className="chip" onClick={() => setMaxTai(mt + 1)} disabled={mt >= MAXTAI_CAP}>+</button>
       </div>
 
-      <div className="row" style={{ alignItems: "center", marginTop: 8 }}>
-        <label className="vlabel">bite (yao)<input className="text-input small" inputMode="decimal" value={yao}
-          onChange={(e) => { setYao(e.target.value); setScheme(CUSTOM); }} /></label>
-        <label className="vlabel">kong (gang)<input className="text-input small" inputMode="decimal" value={gang}
-          onChange={(e) => { setGang(e.target.value); setScheme(CUSTOM); }} /></label>
-      </div>
       <p style={{ fontSize: "0.78rem", opacity: 0.6 }}>
-        Zimo is what EACH other player pays on a self-draw; Shoot is what the single discarder pays.
-        Bite &amp; kong are a flat amount each other player pays.
+        Zimo is what EACH other player pays on a self-draw (plus the self-draw bonus, if set); Shoot is what
+        the single discarder pays. Bite &amp; kong are a flat amount each other player pays.
       </p>
 
       <button className="primary-btn" disabled={!ready || busy} onClick={submit}>

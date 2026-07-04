@@ -15,10 +15,12 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 |---|---|
 | `app/` | Next.js 15 App Router shell. Styling = the **Halcyon design system**: `app/halcyon.css` (vendored tokens from `E:\Claude\halcyon-ds`) + `globals.css` (classes driven by Halcyon tokens/fonts/radii/shadows). Light/dark set on `<html data-theme>` — follows Telegram's colorScheme on a real launch, else the OS (`layout.tsx` boot script + `lib/telegram.ts`); accent `data-accent="slate"`. Re-vendor by re-concatenating the halcyon-ds token files into `app/halcyon.css`. |
 | `components/SGGame.tsx` | Tracker **router + home** (boot gates: username → game-types checklist; game-type dropdown; groups w/ balances + manual reorder; deep links; screen union) |
-| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join`, `Setup` (create group + usual-type + default payouts), `Group` (**debt counter + session banner + session setup w/ payout presets**), `Play` (session balances, log, **record-action wizard**) |
-| `components/RiichiCalculator.tsx`, `TilesMode.tsx`, `ResultCard.tsx` | Riichi calculator UI |
+| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join`, `Setup` (create group + usual-type + default payouts, `InfoDot` help bubbles), `Group` (**debt counter + session banner + session setup w/ payout presets**), `Play` (session balances, log, **record-action wizard** — Hu/Zimo/Gang/Yao with open-vs-concealed + the "X shoot Y" transfer selector), `SGTiles` (SG/Msia tile picker — "Tai calculator"; picker only, scoring not wired yet), `InfoDot` (tap-to-reveal "?" help bubbles) |
+| `components/RiichiCalculator.tsx`, `TilesMode.tsx`, `ResultCard.tsx` | Riichi calculator UI. `TilesMode` renders real tile art from `public/tiles/jp/` (basePath-prefixed) |
+| `public/tiles/` | Tile PNG art (downscaled): `jp/` (Riichi), `sg/` (Singaporean, incl. flowers/seasons). Filenames = engine code + set prefix (jp1C.png, sgEW.png) |
 | `lib/telegram.ts` | The one Telegram wrapper (typed CDN script: haptics, back-button stack, closing confirmation). **Do not migrate to @telegram-apps/sdk-react** — see the decision comment at its top |
-| `lib/sg/payout.ts` | SG money engine (pure; unit-tested in `payout.test.ts`) |
+| `lib/sg/payout.ts` | SG money engine (pure; unit-tested in `payout.test.ts`). `PayoutConfig` incl. `zimoBonus` (flat per-pax self-draw bonus) |
+| `lib/sg/actions.ts` | Pure record-action wizard logic (`stepsFor`/`buildResult`): concealed anyao/angang doubling, gang-shoot pao (shooter pays nOther×), the shoot selector. **Unit-tested in `actions.test.ts`** (the money paths) — no React/Telegram imports so it stays testable |
 | `lib/sg/remote.ts` | Client API layer: `{op, initData}` calls to the `track` function; localStorage caches; `USERNAME_RE` (the single client copy) |
 | `lib/riichi/` | Riichi engine: `analyze.ts` (hand decomposition), `yaku.ts`, `scoring.ts` (unit-tested) |
 | `supabase/functions/track/` | THE backend: validates Telegram initData (HMAC) on every call, service-role DB access |

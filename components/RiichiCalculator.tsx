@@ -6,12 +6,12 @@ import { score } from "@/lib/riichi/scoring";
 import { YAKU, totalHan } from "@/lib/riichi/yaku";
 import ResultCard from "./ResultCard";
 import TilesMode from "./TilesMode";
+import { NumberPicker } from "./NumberPicker";
 
 type Mode = "manual" | "yaku" | "tiles";
 
 const HAN = Array.from({ length: 13 }, (_, i) => i + 1);
 const FU = [20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110];
-const RANGE = (n: number) => Array.from({ length: n }, (_, i) => i);
 
 function Chips<T extends string | number>({
   options,
@@ -110,7 +110,7 @@ export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
       />
 
       <h2>Honba</h2>
-      <Chips options={RANGE(7).map((n) => ({ v: n, label: String(n) }))} value={honba} onChange={setHonba} />
+      <NumberPicker value={honba} onChange={setHonba} max={10} />
 
       {mode === "tiles" ? (
         <TilesMode tsumo={tsumo} players={players} honba={honba} />
@@ -143,10 +143,12 @@ export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
                 onChange={(v) => setClosed(v === "closed")}
               />
               <h2>Yaku</h2>
-              <div className="row">
+              <div className="choices">
                 {YAKU.filter((y) => closed || y.openHan !== null).map((y) => (
-                  <div key={y.key} className={"chip" + (picked.has(y.key) ? " on" : "")} onClick={() => { haptic("selection"); toggleYaku(y.key); }} title={y.en}>
-                    {y.name} {closed ? y.closedHan : y.openHan}
+                  <div key={y.key} className={"choice-btn" + (picked.has(y.key) ? " selected-choice" : "")}
+                    onClick={() => { haptic("selection"); toggleYaku(y.key); }}>
+                    {y.name} · {closed ? y.closedHan : y.openHan}
+                    <small>{y.en}</small>
                   </div>
                 ))}
               </div>
@@ -161,7 +163,7 @@ export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
           )}
 
           <h2>Dora (incl. aka / ura)</h2>
-          <Chips options={RANGE(11).map((n) => ({ v: n, label: String(n) }))} value={dora} onChange={setDora} />
+          <NumberPicker value={dora} onChange={setDora} max={20} />
 
           {result && ("error" in result ? <ResultCard error={result.error} /> : <ResultCard score={result.score} />)}
         </>

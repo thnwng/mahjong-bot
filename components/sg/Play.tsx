@@ -34,7 +34,7 @@ function renderLogLine(e: LogEntry): string {
     case "hu": return `Hu: ${m.winner} wins off ${m.discarder}${m.tai ? ` (${m.tai} tai)` : ""}`;
     case "zimo": return `Zimo: ${m.winner} self-draws${m.tai ? ` (${m.tai} tai)` : ""}`;
     case "gang": {
-      const how = m.mode === "an" ? "concealed kong (angang)" : m.payer ? `kong off ${m.payer}` : "self-kong (all pay)";
+      const how = m.mode === "an" ? "concealed gang (angang)" : m.payer ? `gang off ${m.payer}` : "self-gang (all pay)";
       return `Gang: ${m.konger} ${how}`;
     }
     case "yao": {
@@ -56,7 +56,7 @@ function computeBalances(players: string[], log: { transfers: Transfer[] }[]): R
 const ACTION_TITLES: Record<Action, { title: string; sub: string }> = {
   hu: { title: "Hu", sub: "win off a discard" },
   zimo: { title: "Zimo", sub: "self-draw" },
-  gang: { title: "Gang", sub: "kong" },
+  gang: { title: "Gang", sub: "four of a kind" },
   yao: { title: "Yao", sub: "bite" },
 };
 
@@ -257,7 +257,7 @@ function Dashboard({
           <p style={{ fontSize: "0.78rem", opacity: 0.65 }}>
             Payouts · 1 tai: shooter {money(discardValue(bases, 1))} / self-draw {money(zimoEachValue(bases, 1))} each
             {zimoBonusOf(bases) > 0 ? ` (+${money(zimoBonusOf(bases))} zimo bonus)` : ""}
-            {yaoOn ? ` · bite ${money(bases.yao)}` : ""}{gangOn ? ` · kong ${money(bases.gang)} each` : ""} · up to {maxTaiOf(bases)} tai
+            {yaoOn ? ` · bite ${money(bases.yao)}` : ""}{gangOn ? ` · gang ${money(bases.gang)} each` : ""} · up to {maxTaiOf(bases)} tai
           </p>
         </>
       ) : (
@@ -269,7 +269,7 @@ function Dashboard({
       <div className="choices">
         <div className="choice-btn" onClick={() => openAction("hu")}>Hu<small>win off discard</small></div>
         <div className="choice-btn" onClick={() => openAction("zimo")}>Zimo<small>self-draw</small></div>
-        {gangOn && <div className="choice-btn" onClick={() => openAction("gang")}>Gang<small>kong</small></div>}
+        {gangOn && <div className="choice-btn" onClick={() => openAction("gang")}>Gang<small>four of a kind</small></div>}
         {yaoOn && <div className="choice-btn" onClick={() => openAction("yao")}>Yao<small>bite</small></div>}
       </div>
 

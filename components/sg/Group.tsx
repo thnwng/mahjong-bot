@@ -294,12 +294,12 @@ export function NewSession({
               onChange={(e) => setFields((f) => ({ ...f, maxTai: e.target.value }))} /></label>
         </div>
         <div className="row" style={{ alignItems: "center" }}>
-          <h2 className="info-head" style={{ margin: "6px 0 0", width: "100%" }}>Bite &amp; kong <PayoutScaleInfo /></h2>
+          <h2 className="info-head" style={{ margin: "6px 0 0", width: "100%" }}>Bite &amp; gang <PayoutScaleInfo /></h2>
           <label className="vlabel">bite (yao)
             <input className="text-input small" inputMode="decimal" value={fields.yao} disabled={!settle || !yaoOn}
               onChange={(e) => setFields((f) => ({ ...f, yao: e.target.value }))} />
             <span className="unit">per pax</span></label>
-          <label className="vlabel">kong (gang)
+          <label className="vlabel">gang (kong)
             <input className="text-input small" inputMode="decimal" value={fields.gang} disabled={!settle || !gangOn}
               onChange={(e) => setFields((f) => ({ ...f, gang: e.target.value }))} />
             <span className="unit">per pax</span></label>
@@ -310,7 +310,7 @@ export function NewSession({
             {yaoOn ? "Bite payouts: on" : "Bite payouts: off"}
           </div>
           <div className={"chip" + (gangOn ? " on" : "")} onClick={() => { haptic("selection"); setGangOn(!gangOn); }}>
-            {gangOn ? "Kong payouts: on" : "Kong payouts: off"}
+            {gangOn ? "Gang payouts: on" : "Gang payouts: off"}
           </div>
         </div>
 

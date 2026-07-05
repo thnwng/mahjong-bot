@@ -73,9 +73,9 @@ export function stepsFor(action: Action, picks: Record<string, string>, players:
   if (action === "gang") {
     const g = bases.gang;
     const steps: StepDef[] = [
-      { key: "konger", title: "Who konged?", kind: "people", options: people(), crumb: (v) => v },
+      { key: "konger", title: "Who declared the gang?", kind: "people", options: people(), crumb: (v) => v },
       {
-        key: "mode", title: "What kind of kong?", kind: "choice",
+        key: "mode", title: "What kind of gang?", kind: "choice",
         options: [
           { v: "zimo", label: "Self-draw / added", hint: `everyone pays ${money(g)} each` },
           { v: "shoot", label: "Off a discard (shoot)", hint: `that one pays ${money(nOther * g)}` },
@@ -86,7 +86,7 @@ export function stepsFor(action: Action, picks: Record<string, string>, players:
     ];
     // "Shoot" needs the one discarder who pays; the konger is the receiver.
     if (picks.mode === "shoot") {
-      steps.push({ key: "shoot", title: "Who shot the kong?", kind: "shoot", options: [], crumb: shootCrumb, fixedReceiver: picks.konger });
+      steps.push({ key: "shoot", title: "Who shot the gang?", kind: "shoot", options: [], crumb: shootCrumb, fixedReceiver: picks.konger });
     }
     return steps;
   }
@@ -147,18 +147,18 @@ export function buildResult(
     const mode = (picks.mode as "zimo" | "shoot" | "an") || "zimo";
     const g = bases.gang;
     if (mode === "shoot") {
-      // Pao (responsibility): the single discarder covers the whole kong — i.e.
+      // Pao (responsibility): the single discarder covers the whole gang — i.e.
       // every other player's share — so they pay nOther x the base.
       const { payer } = parseShoot(picks.shoot);
       return {
-        summary: `Gang: ${konger} kong off ${payer} (${money(nOther * g)})`,
+        summary: `Gang: ${konger} gang off ${payer} (${money(nOther * g)})`,
         transfers: settleGang(konger, nOther * g, players, payer),
         meta: { k: "gang", konger, payer, mode },
       };
     }
     const each = mode === "an" ? 2 * g : g; // concealed pays double each
     return {
-      summary: `Gang: ${konger} ${mode === "an" ? "concealed kong (angang)" : "self-kong"} — all pay ${money(each)}`,
+      summary: `Gang: ${konger} ${mode === "an" ? "concealed gang (angang)" : "self-gang"} — all pay ${money(each)}`,
       transfers: settleGang(konger, each, players, null),
       meta: { k: "gang", konger, payer: null, mode },
     };

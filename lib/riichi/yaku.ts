@@ -71,6 +71,16 @@ export const YAKUMAN: Yakuman[] = [
 
 export const YAKUMAN_BY_KEY: Record<string, Yakuman> = Object.fromEntries(YAKUMAN.map((y) => [y.key, y]));
 
+/** Common English name for a romaji yaku name (what the analyzer emits in its
+ *  yaku list), so the result card can show "Riichi (Riichi declaration)". Keyed
+ *  by a normalized form (lowercase, no spaces) because the analyzer and the
+ *  table sometimes differ in spacing/case (e.g. "Suukantsu" vs "Suu Kantsu"). */
+const normName = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+const EN_TABLE: Record<string, string> = Object.fromEntries(
+  [...YAKU, ...YAKUMAN].map((y) => [normName(y.name), y.en]),
+);
+export const englishName = (name: string): string | undefined => EN_TABLE[normName(name)];
+
 /** Sum han for the chosen yaku at the right open/closed value, plus dora. */
 export function totalHan(keys: string[], closed: boolean, dora = 0): number {
   let han = 0;

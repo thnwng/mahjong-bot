@@ -1,6 +1,11 @@
 "use client";
 
 import { RiichiScore } from "@/lib/riichi/scoring";
+import { englishName } from "@/lib/riichi/yaku";
+
+// "Riichi" -> "Riichi (Riichi declaration)". Names the analyzer adds that aren't
+// yaku (Dora, Aka dora, Ura dora) have no English gloss and pass through as-is.
+const withEn = (name: string) => { const en = englishName(name); return en ? `${name} (${en})` : name; };
 
 export default function ResultCard({
   score,
@@ -20,12 +25,12 @@ export default function ResultCard({
   const win = score.tsumo ? "tsumo" : "ron";
   const fuNote = score.han > 0 && score.han < 5 ? ` ${score.fu} fu` : "";
 
-  const yakuLine =
+  const yakuLines: string[] =
     yakuman && yakuman.length
-      ? yakuman.join(" + ")
+      ? yakuman.map(withEn)
       : yaku && yaku.length
-        ? yaku.map(([n, h]) => (h ? `${n} ${h}` : n)).join(", ")
-        : "";
+        ? yaku.map(([n, h]) => (h ? `${withEn(n)} — ${h} han` : withEn(n)))
+        : [];
 
   return (
     <div className="result">
@@ -43,7 +48,11 @@ export default function ResultCard({
             `${p.count} non-dealer${p.count > 1 ? "s" : ""} ${p.count > 1 ? "pay" : "pays"} ${p.amount.toLocaleString()}${p.count > 1 ? " each" : ""}`}
         </div>
       ))}
-      {yakuLine && <div className="yaku">{yakuLine}</div>}
+      {yakuLines.length > 0 && (
+        <div className="yaku">
+          {yakuLines.map((line, i) => <div key={i}>{line}</div>)}
+        </div>
+      )}
     </div>
   );
 }

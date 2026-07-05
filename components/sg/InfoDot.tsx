@@ -42,17 +42,17 @@ export function InfoDot({ label, children }: { label?: string; children: React.R
   );
 }
 
-// Shared "?" bubble explaining how bite (yao) and kong (gang) scale. x = the
+// Shared "?" bubble explaining how bite (yao) and gang (kong) scale. x = the
 // per-pax base you set; an- (concealed) hands pay double; "everybody" = all
 // three other players each pay. Used next to the flats in both payout forms.
 export function PayoutScaleInfo() {
   return (
-    <InfoDot label="How bites & kongs scale">
+    <InfoDot label="How bites & gangs scale">
       <span className="bub-row">yao / anyao, one person = <span className="bub-x">x / 2x</span></span>
       <span className="bub-row">yao / anyao, everybody = <span className="bub-x">3x / 6x</span></span>
       <span className="bub-row">gang (shoot or zimo after pong) / angang = <span className="bub-x">3x / 6x</span></span>
       <span className="bub-note">
-        x = the bite or kong amount you set (per pax). &ldquo;Everybody&rdquo; = all three others each pay;
+        x = the bite or gang amount you set (per pax). &ldquo;Everybody&rdquo; = all three others each pay;
         an- (concealed) hands pay double.
       </span>
     </InfoDot>

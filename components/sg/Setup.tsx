@@ -152,13 +152,13 @@ export function Setup({
         </select>
       </label>
 
-      <h2 className="info-head">Bite, kong &amp; self-draw bonus <PayoutScaleInfo /></h2>
+      <h2 className="info-head">Bite, gang &amp; self-draw bonus <PayoutScaleInfo /></h2>
       <div className="row" style={{ alignItems: "flex-end" }}>
         <label className="vlabel">bite (yao)
           <input className="text-input small" inputMode="decimal" value={yao}
             onChange={(e) => { setYao(e.target.value); setScheme(CUSTOM); }} />
           <span className="unit">per pax</span></label>
-        <label className="vlabel">kong (gang)
+        <label className="vlabel">gang (kong)
           <input className="text-input small" inputMode="decimal" value={gang}
             onChange={(e) => { setGang(e.target.value); setScheme(CUSTOM); }} />
           <span className="unit">per pax</span></label>
@@ -200,7 +200,7 @@ export function Setup({
 
       <p style={{ fontSize: "0.78rem", opacity: 0.6 }}>
         Zimo is what EACH other player pays on a self-draw (plus the self-draw bonus, if set); Shoot is what
-        the single discarder pays. Bite &amp; kong are a flat amount each other player pays.
+        the single discarder pays. Bite &amp; gang are a flat amount each other player pays.
       </p>
 
       <button className="primary-btn" disabled={!ready || busy} onClick={submit}>

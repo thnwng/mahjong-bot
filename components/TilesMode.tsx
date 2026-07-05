@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { analyze, WinContext, CalledMeld } from "@/lib/riichi/analyze";
 import ResultCard from "./ResultCard";
+import { NumberPicker } from "./NumberPicker";
+
+// Display names for meld kinds. The engine's internal kind stays "chow"/"pung"/
+// "kan" (analyze.ts depends on it); the UI standardises on chi/pon/kong.
+const KIND_LABEL: Record<"chow" | "pung" | "kan", string> = { chow: "chi", pung: "pon", kan: "kong" };
 
 // Tile images (Japanese / Riichi set) served from public/tiles/jp. The file
 // name is the engine code with a "jp" prefix (jp1C.png, jpEW.png, ...). basePath
@@ -198,11 +203,7 @@ export default function TilesMode({
       </div>
 
       <h2>Dora (incl. aka / ura)</h2>
-      <div className="row">
-        {RANGE(11).map(n => (
-          <div key={n} className={"chip" + (dora === n ? " selected" : "")} onClick={() => setDora(n)}>{n}</div>
-        ))}
-      </div>
+      <NumberPicker value={dora} onChange={setDora} max={20} />
 
       {/* ── Declared melds ── */}
       <h2>Declared sets</h2>
@@ -230,12 +231,12 @@ export default function TilesMode({
             </span>
             {bld.codes.length > 0 && (
               <span className="meld-preview-tiles">
-                {bld.codes.map((c, i) => <TileImg key={i} code={c} className="sm" />)}
+                {bld.codes.map((c, i) => <div key={i} className="tile-btn tile-pic sm"><TileImg code={c} /></div>)}
               </span>
             )}
             {bld.codes.length === bld.target && (
               <span style={{ fontSize: "0.78rem", color: bldKind ? "var(--button)" : "var(--neg)" }}>
-                → {bldKind ?? "invalid — try different tiles"}
+                → {bldKind ? KIND_LABEL[bldKind] : "invalid — try different tiles"}
               </span>
             )}
           </div>

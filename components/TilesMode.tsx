@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { analyze, WinContext, CalledMeld } from "@/lib/riichi/analyze";
+import { chiStep } from "@/lib/riichi/chi";
 import ResultCard from "./ResultCard";
 import { NumberPicker } from "./NumberPicker";
 
-// Display names for meld kinds. The engine's internal kind stays "chow"/"pung"/
-// "kan" (analyze.ts depends on it); the UI standardises on chi/pon/kong.
-const KIND_LABEL: Record<"chow" | "pung" | "kan", string> = { chow: "chi", pung: "pon", kan: "kong" };
+// Meld types the builder offers, and the engine `kind` each maps to (analyze.ts
+// depends on "chow"/"pung"/"kan"; the UI standardises on chi/pon/kong).
+type BuildType = "chi" | "pon" | "kong";
+const KIND_OF: Record<BuildType, "chow" | "pung" | "kan"> = { chi: "chow", pon: "pung", kong: "kan" };
+const targetOf = (t: BuildType) => (t === "kong" ? 4 : 3);
 
 // Tile images (Japanese / Riichi set) served from public/tiles/jp. The file
 // name is the engine code with a "jp" prefix (jp1C.png, jpEW.png, ...). basePath
@@ -38,25 +41,12 @@ const FLAGS: [string, string][] = [
   ["chankan", "Chankan"],
 ];
 const RANGE = (n: number) => Array.from({ length: n }, (_, i) => i);
-
-function detectKind(codes: string[]): "chow" | "pung" | "kan" | null {
-  if (codes.length === 3) {
-    if (codes.every(c => c === codes[0])) return "pung";
-    const s = codes[0]?.[1];
-    if (s && "BCD".includes(s) && codes.every(c => c[1] === s)) {
-      const ranks = codes.map(c => parseInt(c[0])).sort((a, b) => a - b);
-      if (ranks[1] === ranks[0] + 1 && ranks[2] === ranks[1] + 1) return "chow";
-    }
-    return null;
-  }
-  if (codes.length === 4 && codes.every(c => c === codes[0])) return "kan";
-  return null;
-}
+const isSuited = (code: string) => "BCD".includes(code[1]);
 
 const meldLabel = (m: CalledMeld) => {
-  if (m.kind === "chow") return "Chi · open";
-  if (m.kind === "pung") return m.concealed ? "Pon · closed" : "Pon · open";
-  return m.concealed ? "Kong · closed" : "Kong · open";
+  if (m.kind === "chow") return "chi";
+  if (m.kind === "pung") return m.concealed ? "pon · closed" : "pon";
+  return m.concealed ? "kong · closed" : "kong";
 };
 
 function TileBtn({
@@ -91,8 +81,8 @@ export default function TilesMode({
   const [flags, setFlags] = useState<Set<string>>(new Set());
   const [dora, setDora] = useState(0);
   const [melds, setMelds] = useState<CalledMeld[]>([]);
-  // bld = meld currently being built
-  const [bld, setBld] = useState<{ codes: string[]; open: boolean; target: 3 | 4 } | null>(null);
+  // bld = meld currently being built (its type fixes what tiles are legal)
+  const [bld, setBld] = useState<{ type: BuildType; codes: string[]; open: boolean } | null>(null);
 
   // Each meld (incl. kong) occupies 3 slots in the concealed count
   const meldSlots = melds.length * 3;
@@ -135,16 +125,43 @@ export default function TilesMode({
       return next;
     });
 
-  const startBuild = (target: 3 | 4) => setBld({ codes: [], open: true, target });
-  const addToBld = (code: string) => {
-    if (!bld || bld.codes.length >= bld.target) return;
-    setBld(b => b ? { ...b, codes: [...b.codes, code] } : null);
+  // ── Meld builder ──────────────────────────────────────────────────────────
+  // Chi builds a run in one suit (only x+-2 stays pickable; the sequence auto-
+  // fills once it's forced). Pon/kong take one tile and auto-fill 3/4 copies.
+  const startBuild = (type: BuildType) => setBld({ type, codes: [], open: type !== "chi" });
+
+  // Which tiles the builder currently accepts (everything else is greyed out).
+  const canBuild = (code: string): boolean => {
+    if (!bld) return false;
+    if (bld.codes.length >= targetOf(bld.type)) return false;
+    if (bld.type !== "chi") return bld.codes.length === 0; // pon/kong: one pick, any tile
+    if (!isSuited(code)) return false;                     // chi: no honors
+    if (bld.codes.length === 0) return true;               // chi: any suited tile first
+    if (code[1] !== bld.codes[0][1]) return false;         // same suit only
+    const ranks = bld.codes.map(c => parseInt(c[0]));
+    const rank = parseInt(code[0]);
+    return !ranks.includes(rank) && chiStep(ranks).candidates.includes(rank);
   };
+
+  const tapBuild = (code: string) => {
+    if (!bld || !canBuild(code)) return;
+    if (bld.type === "pon") { setBld({ ...bld, codes: [code, code, code] }); return; }
+    if (bld.type === "kong") { setBld({ ...bld, codes: [code, code, code, code] }); return; }
+    // chi: add this rank, then auto-fill if only one sequence remains
+    const suit = code[1];
+    const ranks = bld.codes.map(c => parseInt(c[0]));
+    const rank = parseInt(code[0]);
+    const step = chiStep([...ranks, rank]);
+    const finalRanks = [...new Set([...ranks, rank, ...step.autofill])].sort((a, b) => a - b);
+    setBld({ ...bld, codes: finalRanks.map(r => `${r}${suit}`) });
+  };
+
+  const bldComplete = bld ? bld.codes.length === targetOf(bld.type) : false;
+
   const confirmMeld = () => {
-    if (!bld) return;
+    if (!bld || !bldComplete) return;
+    const kind = KIND_OF[bld.type];
     let codes = [...bld.codes];
-    const kind = detectKind(codes);
-    if (!kind) return;
     if (kind === "chow") codes = codes.sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
     const newMelds = [...melds, { kind, codes, concealed: !bld.open }];
     setMelds(newMelds);
@@ -154,8 +171,6 @@ export default function TilesMode({
   };
   const removeMeld = (i: number) => setMelds(prev => prev.filter((_, j) => j !== i));
 
-  const bldKind = bld ? detectKind(bld.codes) : null;
-  const bldValid = bld !== null && bld.codes.length === bld.target && bldKind !== null;
   const hasOpen = melds.some(m => !m.concealed);
 
   const result = useMemo(() => {
@@ -171,6 +186,16 @@ export default function TilesMode({
     };
     return analyze(concealed, melds, ctx);
   }, [counts, winTile, seatWind, roundWind, flags, dora, tsumo, players, honba, total, melds, handTarget]);
+
+  // A builder tile grid cell: highlighted if already in the meld, greyed if not
+  // currently pickable.
+  const buildCell = (c: string) => {
+    const cnt = bld ? bld.codes.filter(x => x === c).length : 0;
+    return (
+      <TileBtn key={c} code={c} count={cnt} selected={cnt > 0}
+        disabled={cnt === 0 && !canBuild(c)} onClick={() => tapBuild(c)} />
+    );
+  };
 
   return (
     <div>
@@ -205,21 +230,23 @@ export default function TilesMode({
       <h2>Dora (incl. aka / ura)</h2>
       <NumberPicker value={dora} onChange={setDora} max={20} />
 
-      {/* ── Declared melds ── */}
+      {/* ── Declared sets: one wrapping row of meld chips ── */}
       <h2>Declared sets</h2>
-      {melds.length > 0 && (
-        <div style={{ marginBottom: 8 }}>
+      {melds.length > 0 ? (
+        <div className="declared-row">
           {melds.map((m, i) => (
-            <div key={i} className="meld-row">
+            <div key={i} className="meld-chip">
               {m.codes.map((c, j) => (
                 <div key={j} className="tile-btn tile-pic sm"><TileImg code={c} /></div>
               ))}
               <span className="meld-label">{meldLabel(m)}</span>
-              <button className="link-btn" style={{ marginTop: 0, marginLeft: 6, fontSize: "0.8rem" }}
+              <button className="link-btn" style={{ marginTop: 0, marginLeft: 2, fontSize: "0.8rem" }}
                 onClick={() => removeMeld(i)}>✕</button>
             </div>
           ))}
         </div>
+      ) : (
+        <p style={{ fontSize: "0.82rem", opacity: 0.6, marginTop: 0 }}>No called sets yet.</p>
       )}
 
       {bld ? (
@@ -227,64 +254,69 @@ export default function TilesMode({
         <div className="meld-builder">
           <div className="meld-builder-preview">
             <span style={{ fontSize: "0.82rem", color: "var(--hint)" }}>
-              {bld.target === 4 ? "Kong" : "Set"} ({bld.codes.length}/{bld.target})
+              {bld.type} ({bld.codes.length}/{targetOf(bld.type)})
             </span>
             {bld.codes.length > 0 && (
               <span className="meld-preview-tiles">
                 {bld.codes.map((c, i) => <div key={i} className="tile-btn tile-pic sm"><TileImg code={c} /></div>)}
               </span>
             )}
-            {bld.codes.length === bld.target && (
-              <span style={{ fontSize: "0.78rem", color: bldKind ? "var(--button)" : "var(--neg)" }}>
-                → {bldKind ? KIND_LABEL[bldKind] : "invalid — try different tiles"}
-              </span>
+            {bldComplete && (
+              <span style={{ fontSize: "0.78rem", color: "var(--button)" }}>→ {bld.type}</span>
             )}
           </div>
           {SUITS.map(s => (
             <div className="tiles-grid" key={s} style={{ marginBottom: 4 }}>
-              {RANGE(9).map(i => {
-                const c = `${i + 1}${s}`;
-                const cnt = bld.codes.filter(x => x === c).length;
-                return (
-                  <TileBtn key={c} code={c} count={cnt}
-                    disabled={bld.codes.length >= bld.target || cnt >= 4}
-                    onClick={() => addToBld(c)} />
-                );
-              })}
+              {RANGE(9).map(i => buildCell(`${i + 1}${s}`))}
             </div>
           ))}
           <div className="tiles-grid" style={{ marginBottom: 8 }}>
-            {HONORS.map(c => {
-              const cnt = bld.codes.filter(x => x === c).length;
-              return (
-                <TileBtn key={c} code={c} count={cnt}
-                  disabled={bld.codes.length >= bld.target || cnt >= 4}
-                  onClick={() => addToBld(c)} />
-              );
-            })}
+            {HONORS.map(c => buildCell(c))}
           </div>
           <div className="row" style={{ gap: 7, flexWrap: "wrap" }}>
             {bld.codes.length > 0 && (
-              <div className="chip" onClick={() => setBld(b => b ? { ...b, codes: b.codes.slice(0, -1) } : null)}>← Undo</div>
+              <div className="chip" onClick={() => setBld(b => b ? { ...b, codes: [] } : null)}>Clear</div>
             )}
-            <div className={"chip" + (bld.open ? " selected" : "")}
-              onClick={() => setBld(b => b ? { ...b, open: true } : null)}>Open</div>
-            <div className={"chip" + (!bld.open ? " selected" : "")}
-              onClick={() => setBld(b => b ? { ...b, open: false } : null)}>Closed</div>
-            <div className={"chip" + (bldValid ? " on" : " tile-dim")}
-              onClick={() => bldValid && confirmMeld()}>Add set</div>
+            {/* Chi is always an open call; pon/kong can be concealed. */}
+            {bld.type !== "chi" && (
+              <>
+                <div className={"chip" + (bld.open ? " selected" : "")}
+                  onClick={() => setBld(b => b ? { ...b, open: true } : null)}>Open</div>
+                <div className={"chip" + (!bld.open ? " selected" : "")}
+                  onClick={() => setBld(b => b ? { ...b, open: false } : null)}>Closed</div>
+              </>
+            )}
+            <div className={"chip" + (bldComplete ? " on" : " tile-dim")}
+              onClick={() => bldComplete && confirmMeld()}>Add set</div>
             <div className="chip" onClick={() => setBld(null)}>Cancel</div>
           </div>
         </div>
       ) : melds.length < 4 ? (
         <div className="row" style={{ marginBottom: 4 }}>
-          <div className="chip" onClick={() => startBuild(3)}>+ Set of 3</div>
-          <div className="chip" onClick={() => startBuild(4)}>+ Kong (4)</div>
+          <div className="chip" onClick={() => startBuild("chi")}>+ chi</div>
+          <div className="chip" onClick={() => startBuild("pon")}>+ pon</div>
+          <div className="chip" onClick={() => startBuild("kong")}>+ kong</div>
         </div>
       ) : null}
 
-      {/* ── Main hand tile picker ── */}
-      <h2>Hand tiles ({total} / {handTarget})</h2>
+      {/* ── Your concealed hand (selected tiles), wraps if long ── */}
+      <h2>Your hand ({total} / {handTarget}) <small>tap to remove</small></h2>
+      {total > 0 ? (
+        <div className="row" style={{ gap: 4 }}>
+          {Object.entries(counts).flatMap(([c, n]) =>
+            RANGE(n).map(i => (
+              <div key={`${c}-${i}`} className="tile-btn tile-pic sm rack-tile" onClick={() => remove(c)}>
+                <TileImg code={c} />
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <p style={{ fontSize: "0.82rem", opacity: 0.6, marginTop: 0 }}>No tiles yet — add them below.</p>
+      )}
+
+      {/* ── Tile picker: tap to add to your hand ── */}
+      <h2>Add tiles</h2>
       {SUITS.map(s => (
         <div className="tiles-grid" key={s}>
           {RANGE(9).map(i => {
@@ -310,22 +342,6 @@ export default function TilesMode({
           );
         })}
       </div>
-
-      {/* ── Rack ── */}
-      {total > 0 && (
-        <>
-          <h2>Rack — tap to remove</h2>
-          <div className="row" style={{ gap: 4 }}>
-            {Object.entries(counts).flatMap(([c, n]) =>
-              RANGE(n).map(i => (
-                <div key={`${c}-${i}`} className="tile-btn tile-pic sm rack-tile" onClick={() => remove(c)}>
-                  <TileImg code={c} />
-                </div>
-              ))
-            )}
-          </div>
-        </>
-      )}
 
       {/* ── Winning tile ── */}
       {total === handTarget && (

@@ -630,6 +630,30 @@ select.text-input {
   flex-wrap: wrap;
 }
 
+/* Declared sets: a wrapping row of self-contained meld chips (tiles + label). */
+.declared-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.meld-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.meld-chip .meld-label {
+  margin-left: 2px;
+}
+
 .meld-label {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);

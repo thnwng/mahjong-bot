@@ -5,14 +5,27 @@ whole codebase. Workspace-wide rules distilled from this review live in
 `E:\Claude\telegram-mini-app-standard.md`. Items are phased by payoff-per-effort;
 each was kept only if it fixes a pain this project actually hit.
 
-## Status (updated 2026-07-02, same day)
+## Status (updated 2026-07-05 against the repo; previous snapshot 2026-07-02)
 
-- **DONE — Phase 1**: items 1, 2, 4, 5, 6, 7, 8, 9 all shipped. Item 3 (CI
-  function deploys) is committed and wired but needs the one-time
-  `SUPABASE_ACCESS_TOKEN` repo secret before the deploy step passes.
-- **DONE — Phase 2**: items 11 (bundled with the record-action wizard rebuild:
-  `components/sg/` split + union `Screen`), 12, 13, 14.
-- **OPEN**: item 10 (numbered migrations) and all of Phase 3 (trigger-gated).
+- **DONE — Phase 1**: items 1-9 all shipped and live. Item 3's one-time
+  caveat is resolved: the `SUPABASE_ACCESS_TOKEN` repo secret was set
+  2026-07-02 and `deploy-functions.yml` has only green runs since (latest
+  2026-07-03) — git push = function deploy.
+- **DONE — Phase 2**: item 10 (numbered migrations ADOPTED, verified
+  2026-07-05 — `supabase/migrations/` 0001_baseline / 0002_sessions_and_prefs /
+  0003_display_name committed, process documented in CLAUDE.md, `schema.sql`
+  frozen as reference), item 11 (bundled with the record-action wizard
+  rebuild: `components/sg/` split + union `Screen`), item 13, and item 14
+  (done superseded rather than as written: dark mode ships via the Halcyon
+  `data-theme` boot mechanism — Telegram colorScheme on real launches, OS
+  preference otherwise — instead of the planned `prefers-color-scheme`
+  fallback block).
+- **REOPENED (2026-07-05 re-audit)**: item 12 (unified `fail()` error
+  contract in `track`) was marked done in the 2026-07-02 snapshot, but no
+  such helper exists in `supabase/functions/track/index.ts` — only the
+  catch-all `console.error` landed. Per Phase-2 discipline, bundle it with
+  the next real `track` change; do not run it as a standalone sprint.
+- **OPEN**: all of Phase 3 (trigger-gated — do not do early).
 
 ## Phase 1 — do next (two security fixes + self-enforcing guardrails)
 

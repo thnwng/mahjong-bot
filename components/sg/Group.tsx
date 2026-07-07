@@ -18,6 +18,7 @@ import {
   addName,
   claimSeat,
   joinNew,
+  settleDebt,
   BOT_APP_LINK,
 } from "@/lib/sg/remote";
 
@@ -96,6 +97,27 @@ export function GroupScreen({
   const anyDebt = net.some((x) => Math.abs(x.v) > 0.004);
   const suggestions = useMemo(() => settleUp(debts), [debts]);
   const enoughToStart = roster.length >= 3;
+
+  // All-time tally: career win/loss per player (union of everyone who's won/lost
+  // money or sat in a finished session), biggest winner first.
+  const career = useMemo(() => {
+    const at = state.allTime || {};
+    const gm = state.games || {};
+    const names = new Set([...Object.keys(at), ...Object.keys(gm)]);
+    return [...names]
+      .map((p) => ({ p, v: at[p] || 0, g: gm[p] || 0 }))
+      .filter((x) => x.g > 0 || Math.abs(x.v) > 0.004)
+      .sort((a, b) => b.v - a.v);
+  }, [state.allTime, state.games]);
+  const settlements = state.settlements || [];
+
+  // Only a party to a debt can settle it (you can settle whether you owe or are
+  // owed). Confirm first — one tap clears the whole pairwise line from the tally.
+  const doSettle = (from: string, to: string, amount: number) => {
+    if (typeof window !== "undefined" &&
+        !window.confirm(`Record that ${from} paid ${to} ${money(amount)}? This clears it from the group tally (it won't affect all-time wins/losses).`)) return;
+    run(() => settleDebt(t.code, from, to, amount));
+  };
 
   return (
     <div>
@@ -180,7 +202,7 @@ export function GroupScreen({
 
       <h2>Debt counter</h2>
       {!anyDebt ? (
-        <p style={{ opacity: 0.7, fontSize: "0.88rem" }}>All square — nothing owed from past sessions.</p>
+        <p style={{ opacity: 0.7, fontSize: "0.88rem" }}>All square — nothing outstanding from past sessions.</p>
       ) : (
         <>
           <div className="balances">
@@ -193,14 +215,63 @@ export function GroupScreen({
           </div>
           {suggestions.length > 0 && (
             <>
-              <h2>To settle up</h2>
-              <div className="log">
-                {suggestions.map((s, i) => (
-                  <div key={i} className="log-row">{s.from} pays {s.to} <strong>{money(s.amount)}</strong></div>
-                ))}
+              {/* Who owes who: each pairwise payment. If you're a party to a
+                  line, a Settle up button records the repayment and clears it. */}
+              <h2>Who owes who</h2>
+              <div className="balances">
+                {suggestions.map((s, i) => {
+                  const mineLine = me != null && (s.from === me || s.to === me);
+                  return (
+                    <div key={i} className="bal-row" style={{ alignItems: "center" }}>
+                      <span>{s.from} pays {s.to} <strong>{money(s.amount)}</strong></span>
+                      {mineLine && (
+                        <button className="chip" disabled={work || busy} onClick={() => doSettle(s.from, s.to, s.amount)}>
+                          Settle up
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+              {!me && (
+                <p style={{ opacity: 0.6, fontSize: "0.78rem", marginTop: 4 }}>
+                  Claim your seat above to settle debts you&apos;re part of.
+                </p>
+              )}
             </>
           )}
+        </>
+      )}
+
+      {/* All-time tally: total won/lost across every finished session (settling
+          up doesn't move these — a repayment isn't a win or a loss). */}
+      <h2>All-time tally</h2>
+      {career.length === 0 ? (
+        <p style={{ opacity: 0.7, fontSize: "0.88rem" }}>No finished sessions yet — it fills in as sessions end.</p>
+      ) : (
+        <div className="balances">
+          {career.map(({ p, v, g }) => (
+            <div key={p} className="bal-row">
+              <span>
+                {p}
+                {g > 0 && <span style={{ opacity: 0.5, fontSize: "0.75rem" }}> · {g} game{g === 1 ? "" : "s"}</span>}
+              </span>
+              <span className={"bal " + (v >= 0 ? "pos" : "neg")}>{v >= 0 ? "+" : ""}{v.toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {settlements.length > 0 && (
+        <>
+          <h2>Settled up</h2>
+          <div className="log">
+            {settlements.map((s, i) => (
+              <div key={i} className="log-row" style={{ opacity: 0.85 }}>
+                {s.from} paid {s.to} <strong>{money(s.amount)}</strong>
+              </div>
+            ))}
+          </div>
         </>
       )}
 

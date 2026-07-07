@@ -15,7 +15,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 |---|---|
 | `app/` | Next.js 15 App Router shell. Styling = the **Halcyon design system**: `app/halcyon.css` (vendored tokens from `E:\Claude\halcyon-ds`) + `globals.css` (classes driven by Halcyon tokens/fonts/radii/shadows). Light/dark set on `<html data-theme>` — follows Telegram's colorScheme on a real launch, else the OS (`layout.tsx` boot script + `lib/telegram.ts`); accent `data-accent="slate"`. Re-vendor by re-concatenating the halcyon-ds token files into `app/halcyon.css`. |
 | `components/SGGame.tsx` | Tracker **router + home** (boot gates: username → game-types checklist; game-type dropdown; groups w/ balances + manual reorder; deep links; screen union) |
-| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join` (enter a group code → opening it JOINS you), `Setup` (create group — just a **name + usual-type**; roster + payouts come later), `Group` (**share link + ROSTER** (add placeholder names, "this is me" to claim a seat), debt counter, session banner, and `NewSession`: **one-page type → who's-playing subset → payouts**), `PayoutEditor` (the per-tai Zimo/Shoot table + scheme dropdown + bite/gang/self-draw-bonus — used at session start), `Play` (session balances, log, **record-action wizard** — Hu/Zimo/Gang/Yao with open-vs-concealed + the "X shoot Y" transfer selector), `SGTiles` (SG/Msia tile picker — "Tai calculator"; picker only, scoring not wired yet), `InfoDot` (tap-to-reveal "?" help bubbles) |
+| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join` (enter a group code → opening it JOINS you), `Setup` (create group — just a **name + usual-type**; roster + payouts come later), `Group` (**share link + ROSTER** (add placeholder names, "this is me" to claim a seat), debt counter, **Who-owes-who with a Settle-up button** (a party to a debt clears it — records a repayment), **All-time tally** (career win/loss + games, separate from outstanding debt), a Settled-up audit list, session banner, and `NewSession`: **one-page type → who's-playing subset → payouts**), `PayoutEditor` (the per-tai Zimo/Shoot table + scheme dropdown + bite/gang/self-draw-bonus — used at session start), `Play` (session balances, log, **record-action wizard** — Hu/Zimo/Gang/Yao with open-vs-concealed + the "X shoot Y" transfer selector), `SGTiles` (SG/Msia tile picker — "Tai calculator"; picker only, scoring not wired yet), `InfoDot` (tap-to-reveal "?" help bubbles) |
 | `components/RiichiCalculator.tsx`, `TilesMode.tsx`, `ResultCard.tsx` | Riichi calculator UI. `TilesMode` renders real tile art from `public/tiles/jp/` (basePath-prefixed) |
 | `public/tiles/` | Tile PNG art (downscaled): `jp/` (Riichi), `sg/` (Singaporean, incl. flowers/seasons). Filenames = engine code + set prefix (jp1C.png, sgEW.png) |
 | `lib/telegram.ts` | The one Telegram wrapper (typed CDN script: haptics, back-button stack, closing confirmation). **Do not migrate to @telegram-apps/sdk-react** — see the decision comment at its top |
@@ -63,7 +63,12 @@ roster names actually playing** (`sessions.players`; 4 for sg4, 3 for my3) + its
 own payout config (or `settle=false` = log-only); an action's transfers are
 validated against `sessions.players` (fallback: the whole roster for legacy
 session-less rows). Ended manually or lazily 24h after start; ended sessions
-freeze into the group debt counter.
+freeze into the group debt counter. Every group op also returns `allTime` (career
+win/loss per name, **excluding** settlements), `games` (ended sessions per name),
+and `settlements` (recent repayments). A **settlement** (`settle` op) is a real-life
+repayment: a reverse transfer tagged `meta.k='settle'` — only a party to the debt
+may record it, the amount is clamped to what's outstanding, and it nets out of
+`debts` but never moves `allTime`. It's a plain action row, so **no migration**.
 
 ## Gotchas / history
 

@@ -32,7 +32,7 @@ create table if not exists actions (
   actioner    text not null,                         -- Telegram display name that entered it
   summary     text not null,                         -- frozen text (fallback for pre-meta rows)
   transfers   jsonb not null,                        -- [{payer,payee,amount}]
-  meta        jsonb,                                 -- {k, tai?, winner?/discarder?/konger?/payer?/biter?/target?}; lets the log render CURRENT names
+  meta        jsonb,                                 -- {k, tai?, winner?/discarder?/konger?/payer?/biter?/target?}; lets the log render CURRENT names. A SETTLEMENT is just an action: meta.k='settle' + {from,to}, transfers=[{payer:creditor,payee:debtor,amount}] (a reverse transfer that nets out of the debt counter but is skipped by the all-time tally). No separate table.
   created_at  timestamptz not null default now()
 );
 create index if not exists actions_tracker_idx on actions (tracker_id, created_at);

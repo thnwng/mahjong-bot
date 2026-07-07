@@ -55,10 +55,21 @@ export interface TrackerState {
   tracker: Tracker;
   actions: RemoteAction[];   // the ACTIVE session's actions ([] when no session)
   session?: Session | null;  // the active session, if one is running
-  debts?: Record<string, number>; // net per player from everything already ended
+  debts?: Record<string, number>; // OUTSTANDING net per player (ended sessions minus settlements)
+  allTime?: Record<string, number>; // career win/loss per player (ignores settlements)
+  games?: Record<string, number>;   // ended sessions each player has sat in
+  settlements?: Settlement[];        // recent repayments (newest first) — a small audit trail
   me?: string | null;        // the seat THIS account claimed (null = in the group but unseated)
   isMember?: boolean;        // you're in the group (opened its link), seated or not
   claimedNames?: string[];   // seats already taken (so the roster can hide them)
+}
+
+/** A recorded real-life repayment that cleared (part of) a debt. */
+export interface Settlement {
+  from: string;   // the debtor who paid
+  to: string;     // the creditor who was paid
+  amount: number;
+  at: string;     // ISO time
 }
 
 export const syncEnabled = () => Boolean(TRACK_URL);
@@ -161,6 +172,13 @@ export const startSession = (code: string, opts: { mahjongType: string; players:
 
 /** End the group's active session; its actions freeze into the debt counter. */
 export const endSession = (code: string) => call<TrackerState>("end-session", { code });
+
+/** Record that a real-life repayment cleared a debt between two players (`from`
+ *  owed `to`). Only a party to the debt may call it; the server clamps `amount`
+ *  to what's actually outstanding. It nets out of the debt counter but never
+ *  counts toward the all-time win/loss tally. */
+export const settleDebt = (code: string, from: string, to: string, amount: number) =>
+  call<TrackerState>("settle", { code, from, to, amount });
 
 /** Rename your own seat in a group (your per-group display name). Rewrites the
  *  roster + past transfers server-side so balances stay correct. Throws "that

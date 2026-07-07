@@ -26,7 +26,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `supabase/functions/track/` | THE backend: validates Telegram initData (HMAC) on every call, service-role DB access |
 | `supabase/functions/bot/` | Webhook bot (@jpgmahjongbot): /start /open /help, group binding, fail-closed secret check |
 | `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |
-| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions); apply new ones in the SQL editor BEFORE the matching function deploys |
+| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement); apply new ones in the SQL editor BEFORE the matching function deploys |
 
 ## How each layer deploys
 

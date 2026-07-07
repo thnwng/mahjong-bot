@@ -663,10 +663,12 @@ Deno.serve(async (req) => {
     // without a userId check AND a "players is still empty" WHERE clause.
 
     if (op === "settle") {
-      // Record a real-life repayment that clears (part of) a debt: a normal
-      // action with a REVERSE transfer (creditor -> debtor) tagged meta.k="settle"
-      // so it nets out of the debt counter but is skipped by the all-time tally.
-      // Only a party to the debt may record it, clamped to what's outstanding.
+      // Record a real-life repayment that clears (part of) a debt. The atomic
+      // net-read + clamp + insert lives in the settle_debt() SQL function, which
+      // serializes per tracker (a transaction advisory lock) so two people
+      // settling the SAME debt at once can't both read the pre-insert net and
+      // over-settle it. Here we only gate on identity (the DB can't see who the
+      // Telegram caller is): they must be a member AND a party to the debt.
       if (!userId) return json({ error: "no account" }, 401);
       const code = String((body as { code?: string }).code || "").toUpperCase();
       const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
@@ -678,28 +680,14 @@ Deno.serve(async (req) => {
       const amount = Number((body as { amount?: unknown }).amount);
       if (!from || !to || from === to) return json({ error: "bad settlement" }, 400);
       if (info.me !== from && info.me !== to) return json({ error: "you can only settle a debt you're part of" }, 403);
-      // Current outstanding net (ended sessions + prior settlements; excludes the
-      // live session — you settle frozen debts, not an in-play game).
-      const session = await activeSession(sb, tracker.id);
-      const rows = await allRows<{ session_id: string | null; transfers: Array<{ payer: string; payee: string; amount: number }> }>(
-        (lo, hi) => sb.from("actions").select("transfers, session_id").eq("tracker_id", tracker.id).range(lo, hi),
-      );
-      const net: Record<string, number> = {};
-      for (const a of rows) {
-        if (session && a.session_id === session.id) continue;
-        for (const t of a.transfers || []) { net[t.payer] = (net[t.payer] || 0) - t.amount; net[t.payee] = (net[t.payee] || 0) + t.amount; }
-      }
-      const cap = Math.min(-(net[from] || 0), net[to] || 0); // how much `from` owes AND `to` is owed
-      if (cap <= 0.004) return json({ error: "nothing outstanding between them" }, 409);
       if (!(amount > 0)) return json({ error: "amount must be positive" }, 400);
-      const amt = Math.min(amount, cap);
-      const { error: e2 } = await sb.from("actions").insert({
-        tracker_id: tracker.id, session_id: null, actioner,
-        summary: `${from} settled up with ${to} (${amt.toFixed(2)})`,
-        transfers: [{ payer: to, payee: from, amount: amt }],
-        meta: { k: "settle", from, to },
+      // settle_debt returns the amount actually settled (0 = nothing outstanding,
+      // so nothing was inserted).
+      const { data: settled, error: se } = await sb.rpc("settle_debt", {
+        p_tracker: tracker.id, p_from: from, p_to: to, p_amount: amount, p_actioner: actioner,
       });
-      if (e2) throw e2;
+      if (se) throw se;
+      if (!(Number(settled) > 0.004)) return json({ error: "nothing outstanding between them" }, 409);
       return json(await groupState(sb, tracker, userId));
     }
 

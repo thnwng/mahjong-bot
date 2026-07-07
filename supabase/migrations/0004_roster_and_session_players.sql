@@ -66,10 +66,10 @@ begin
   ), '[]'::jsonb) where tracker_id = p_id;
   update actions set meta = (
     select jsonb_object_agg(key,
-      case when key in ('winner','discarder','konger','payer','biter','target') and value = to_jsonb(p_old)
+      case when key in ('winner','discarder','konger','payer','biter','target','from','to') and value = to_jsonb(p_old)
            then to_jsonb(p_new) else value end)
     from jsonb_each(meta)
-  ) where tracker_id = p_id and meta is not null;
+  ) where tracker_id = p_id and meta is not null; -- 'from'/'to' = settlement labels (0005)
   -- Follow the rename into sessions: the playing list + who started it, so a
   -- mid-session rename keeps the active sitting attributed to the renamed player.
   update sessions set players = coalesce((

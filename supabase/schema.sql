@@ -118,10 +118,10 @@ begin
   -- free-text substring hazard) — keeps the rendered log on current names.
   update actions set meta = (
     select jsonb_object_agg(key,
-      case when key in ('winner','discarder','konger','payer','biter','target') and value = to_jsonb(p_old)
+      case when key in ('winner','discarder','konger','payer','biter','target','from','to') and value = to_jsonb(p_old)
            then to_jsonb(p_new) else value end)
     from jsonb_each(meta)
-  ) where tracker_id = p_id and meta is not null;
+  ) where tracker_id = p_id and meta is not null; -- 'from'/'to' = settlement labels (0005)
   -- 0004: follow the rename into sessions — the playing list + who started it,
   -- so a mid-session rename keeps the active sitting attributed to the player.
   update sessions set players = coalesce((
@@ -132,6 +132,56 @@ begin
 end $$;
 revoke all on function rename_player(uuid, bigint, text, text) from public, anon, authenticated;
 grant execute on function rename_player(uuid, bigint, text, text) to service_role;
+
+-- 0005: atomic debt settlement. Records a real-life repayment as a REVERSE
+-- transfer tagged meta.k='settle', computing the outstanding net + clamp + insert
+-- in ONE security-definer function serialized per tracker (a transaction advisory
+-- lock), so two people settling the same debt at once can't over-settle it.
+-- Returns the amount actually settled (0 = already clear). Identity gating
+-- (member + party to the debt) is the edge function's job. service_role only.
+create or replace function settle_debt(
+  p_tracker uuid, p_from text, p_to text, p_amount numeric, p_actioner text
+) returns numeric
+  language plpgsql security definer as $$
+declare
+  v_owe    numeric;   -- how much p_from still owes overall (paid out - taken in)
+  v_owed   numeric;   -- how much p_to is still owed overall (taken in - paid out)
+  v_cap    numeric;
+  v_amt    numeric;
+begin
+  perform pg_advisory_xact_lock(hashtext('settle:' || p_tracker::text)::bigint);
+  -- "Live" session decided by ended_at IS NULL in this snapshot (a join), so a
+  -- session ending mid-call can't desync the net read.
+  with tx as (
+    select e
+    from actions a
+    left join sessions s on s.id = a.session_id,
+    lateral jsonb_array_elements(a.transfers) e
+    where a.tracker_id = p_tracker
+      and (a.session_id is null or s.ended_at is not null)
+  )
+  select
+    coalesce(sum(case when e->>'payer' = p_from then (e->>'amount')::numeric else 0 end)
+           - sum(case when e->>'payee' = p_from then (e->>'amount')::numeric else 0 end), 0),
+    coalesce(sum(case when e->>'payee' = p_to   then (e->>'amount')::numeric else 0 end)
+           - sum(case when e->>'payer' = p_to   then (e->>'amount')::numeric else 0 end), 0)
+  into v_owe, v_owed
+  from tx;
+  v_cap := least(v_owe, v_owed);
+  if v_cap is null or v_cap <= 0.004 then return 0; end if;
+  v_amt := least(p_amount, v_cap);
+  if v_amt <= 0 then return 0; end if;
+  insert into actions (tracker_id, session_id, actioner, summary, transfers, meta)
+  values (
+    p_tracker, null, p_actioner,
+    p_from || ' settled up with ' || p_to || ' (' || to_char(v_amt, 'FM999999990.00') || ')',
+    jsonb_build_array(jsonb_build_object('payer', p_to, 'payee', p_from, 'amount', v_amt)),
+    jsonb_build_object('k', 'settle', 'from', p_from, 'to', p_to)
+  );
+  return v_amt;
+end $$;
+revoke all on function settle_debt(uuid, text, text, numeric, text) from public, anon, authenticated;
+grant execute on function settle_debt(uuid, text, text, numeric, text) to service_role;
 
 alter table trackers enable row level security;
 alter table actions  enable row level security;

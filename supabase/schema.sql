@@ -45,12 +45,13 @@ create table if not exists members (
   id          uuid primary key default gen_random_uuid(),
   tracker_id  uuid not null references trackers(id) on delete cascade,
   user_id     bigint not null,                       -- Telegram account id
-  name        text,                                  -- the PLAYER SEAT this account claimed
+  name        text,                                  -- the PLAYER SEAT this account claimed; NULL = unseated member (0004)
   created_at  timestamptz not null default now(),
   unique (tracker_id, user_id)                        -- one seat per account per group
 );
 create index if not exists members_user_idx on members (user_id, created_at);
 alter table members enable row level security; -- no policies: only the Edge Function (service role) touches it
+alter table members alter column name drop not null; -- 0004: unseated members (opened the link, no seat yet) have name null
 -- A seat is claimed by at most one account (named constraint = single source of truth).
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'members_tracker_name_key') then
@@ -59,11 +60,12 @@ do $$ begin
 end $$;
 
 -- Atomic, race-safe append of a player to trackers.players (no lost updates).
--- Only the Edge Function (service role) may call it.
+-- Dedups by name and enforces the ROSTER_MAX=12 cap in-statement (0004) so a
+-- concurrent add can't exceed it. Only the Edge Function (service role) calls it.
 create or replace function add_player(p_id uuid, p_name text) returns void
   language sql security definer as $$
     update trackers set players = players || to_jsonb(p_name)
-    where id = p_id and not (players ? p_name);
+    where id = p_id and not (players ? p_name) and jsonb_array_length(players) < 12;
   $$;
 revoke all on function add_player(uuid, text) from public, anon, authenticated;
 grant execute on function add_player(uuid, text) to service_role;
@@ -120,6 +122,13 @@ begin
            then to_jsonb(p_new) else value end)
     from jsonb_each(meta)
   ) where tracker_id = p_id and meta is not null;
+  -- 0004: follow the rename into sessions — the playing list + who started it,
+  -- so a mid-session rename keeps the active sitting attributed to the player.
+  update sessions set players = coalesce((
+    select jsonb_agg(case when elem = to_jsonb(p_old) then to_jsonb(p_new) else elem end order by ord)
+    from jsonb_array_elements(players) with ordinality as t(elem, ord)
+  ), '[]'::jsonb) where tracker_id = p_id;
+  update sessions set started_by = p_new where tracker_id = p_id and started_by = p_old;
 end $$;
 revoke all on function rename_player(uuid, bigint, text, text) from public, anon, authenticated;
 grant execute on function rename_player(uuid, bigint, text, text) to service_role;
@@ -142,6 +151,7 @@ create table if not exists sessions (
   id           uuid primary key default gen_random_uuid(),
   tracker_id   uuid not null references trackers(id) on delete cascade,
   mahjong_type text not null default 'sg4',           -- 'sg4' | 'my3' (my3 = WIP)
+  players      jsonb not null default '[]',            -- the 3-4 roster names playing this sitting (0004)
   bases        jsonb,                                  -- payout config for this session
   settle       boolean not null default true,          -- false = "ownself settle" (no payout tracking)
   started_by   text,
@@ -151,6 +161,7 @@ create table if not exists sessions (
 create index if not exists sessions_tracker_idx on sessions (tracker_id, started_at desc);
 create unique index if not exists sessions_one_active on sessions (tracker_id) where ended_at is null;
 alter table sessions enable row level security;
+alter table sessions add column if not exists players jsonb not null default '[]'; -- 0004
 
 alter table actions add column if not exists session_id uuid references sessions(id) on delete set null;
 create index if not exists actions_session_idx on actions (session_id);

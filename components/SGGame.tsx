@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { haptic } from "@/lib/telegram";
 import { UsernameGate, GameTypesGate } from "@/components/sg/Identity";
-import { JoinForm, JoinGroup } from "@/components/sg/Join";
+import { JoinForm } from "@/components/sg/Join";
 import { Setup } from "@/components/sg/Setup";
 import { GroupScreen, NewSession } from "@/components/sg/Group";
 import { Play } from "@/components/sg/Play";
@@ -42,8 +42,7 @@ type Screen =
   | { t: "tiles" }                             // SG/Msia tile picker (tai helper)
   | { t: "create" }
   | { t: "join" }                              // type a group code
-  | { t: "joining"; state: TrackerState }      // pick which seat you are
-  | { t: "group"; state: TrackerState }        // debts + session banner
+  | { t: "group"; state: TrackerState }        // roster + claim + debts + session
   | { t: "newSession"; state: TrackerState }   // session setup
   | { t: "play"; state: TrackerState };        // the live session
 
@@ -98,12 +97,12 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
     if (cid !== undefined && chatCodesRef.current.has(code)) rememberGroupForChat(cid, code);
   };
 
-  // Enter a group: claimed a seat -> the group page (debts + session); not yet
-  // -> the Join screen. Only claimed groups become "yours".
+  // Enter a group: opening its link makes you a member (seated or not), so we
+  // always land on the group page. Claiming a seat / adding names happens there.
   const enter = (s: TrackerState) => {
     noteChatGroup(s.tracker.code);
-    if (s.me) { rememberGroup(sumOf(s)); setScreen({ t: "group", state: s }); }
-    else setScreen({ t: "joining", state: s });
+    rememberGroup(sumOf(s));
+    setScreen({ t: "group", state: s });
   };
 
   // Open a direct code link, else load home + auto-open this chat's group.
@@ -263,6 +262,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
       return (
         <GroupScreen
           state={screen.state}
+          onState={(s) => setScreen({ t: "group", state: s })}
           busy={busy}
           onNewSession={() => setScreen({ t: "newSession", state: screen.state })}
           onEnterSession={() => setScreen({ t: "play", state: screen.state })}
@@ -277,7 +277,6 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
           presets={profile?.presets || []}
           busy={busy}
           error={error}
-          onPresets={(presets) => setProfile((p) => (p ? { ...p, presets } : p))}
           onStart={async (opts) => {
             setBusy(true); setError("");
             try { const s = await startSession(screen.state.tracker.code, opts); haptic("success"); setScreen({ t: "play", state: s }); }
@@ -296,21 +295,17 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
         />
       );
 
-    case "joining":
-      return <JoinGroup state={screen.state} busy={busy} defaultName={profile?.username || ""} onClaimed={enter}
-        onBack={goHome} />;
-
     case "create":
       return (
         <Setup
-          title="Create a new group" startLabel="Create group" presets={profile?.presets || []}
+          title="Create a new group" startLabel="Create group"
           note={tgChatId !== undefined
-            ? "When you create it, I'll post a join button in your Telegram group so everyone can tap to join — then pick which player you are."
-            : "After creating, pick which player you are."}
-          onStart={async (name, players, bases, defaultType) => {
+            ? "I'll post a join link in your Telegram group so everyone can tap to join."
+            : undefined}
+          onStart={async (name, defaultType) => {
             setBusy(true); setError("");
             try {
-              const st = await createTracker(name, players, bases, tgChatId, defaultType);
+              const st = await createTracker(name, tgChatId, defaultType);
               if (tgChatId !== undefined) chatCodesRef.current.add(st.tracker.code);
               enter(st);
             }
@@ -424,7 +419,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
               <div className="choices" style={{ marginTop: 14 }}>
                 <div className="choice-btn" onClick={() => canSync && setScreen({ t: "create" })}
-                  style={canSync ? undefined : { opacity: 0.5, cursor: "not-allowed" }}>Create a new group<small>players + defaults</small></div>
+                  style={canSync ? undefined : { opacity: 0.5, cursor: "not-allowed" }}>Create a new group<small>just a share link</small></div>
                 <div className="choice-btn" onClick={() => canSync && setScreen({ t: "join" })}
                   style={canSync ? undefined : { opacity: 0.5, cursor: "not-allowed" }}>Join with a code<small>enter a shared code</small></div>
               </div>

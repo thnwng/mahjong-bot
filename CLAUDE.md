@@ -15,7 +15,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 |---|---|
 | `app/` | Next.js 15 App Router shell. Styling = the **Halcyon design system**: `app/halcyon.css` (vendored tokens from `E:\Claude\halcyon-ds`) + `globals.css` (classes driven by Halcyon tokens/fonts/radii/shadows). Light/dark set on `<html data-theme>` — follows Telegram's colorScheme on a real launch, else the OS (`layout.tsx` boot script + `lib/telegram.ts`); accent `data-accent="slate"`. Re-vendor by re-concatenating the halcyon-ds token files into `app/halcyon.css`. |
 | `components/SGGame.tsx` | Tracker **router + home** (boot gates: username → game-types checklist; game-type dropdown; groups w/ balances + manual reorder; deep links; screen union) |
-| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join`, `Setup` (create group + usual-type + default payouts, `InfoDot` help bubbles), `Group` (**debt counter + session banner + session setup w/ payout presets**), `Play` (session balances, log, **record-action wizard** — Hu/Zimo/Gang/Yao with open-vs-concealed + the "X shoot Y" transfer selector), `SGTiles` (SG/Msia tile picker — "Tai calculator"; picker only, scoring not wired yet), `InfoDot` (tap-to-reveal "?" help bubbles) |
+| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join` (enter a group code → opening it JOINS you), `Setup` (create group — just a **name + usual-type**; roster + payouts come later), `Group` (**share link + ROSTER** (add placeholder names, "this is me" to claim a seat), debt counter, session banner, and `NewSession`: **one-page type → who's-playing subset → payouts**), `PayoutEditor` (the per-tai Zimo/Shoot table + scheme dropdown + bite/gang/self-draw-bonus — used at session start), `Play` (session balances, log, **record-action wizard** — Hu/Zimo/Gang/Yao with open-vs-concealed + the "X shoot Y" transfer selector), `SGTiles` (SG/Msia tile picker — "Tai calculator"; picker only, scoring not wired yet), `InfoDot` (tap-to-reveal "?" help bubbles) |
 | `components/RiichiCalculator.tsx`, `TilesMode.tsx`, `ResultCard.tsx` | Riichi calculator UI. `TilesMode` renders real tile art from `public/tiles/jp/` (basePath-prefixed) |
 | `public/tiles/` | Tile PNG art (downscaled): `jp/` (Riichi), `sg/` (Singaporean, incl. flowers/seasons). Filenames = engine code + set prefix (jp1C.png, sgEW.png) |
 | `lib/telegram.ts` | The one Telegram wrapper (typed CDN script: haptics, back-button stack, closing confirmation). **Do not migrate to @telegram-apps/sdk-react** — see the decision comment at its top |
@@ -26,7 +26,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `supabase/functions/track/` | THE backend: validates Telegram initData (HMAC) on every call, service-role DB access |
 | `supabase/functions/bot/` | Webhook bot (@jpgmahjongbot): /start /open /help, group binding, fail-closed secret check |
 | `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |
-| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets); apply new ones in the SQL editor BEFORE the matching function deploys |
+| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions); apply new ones in the SQL editor BEFORE the matching function deploys |
 
 ## How each layer deploys
 
@@ -48,14 +48,22 @@ Every request is `POST { op, initData, ...payload }` to the `track` function;
 the server validates `initData` (HMAC with the bot token, 24h freshness) and
 derives the account id from it — nothing client-claimed is trusted. Every group
 op returns the full canonical `TrackerState` (tracker + the ACTIVE session and
-its actions + `debts` summed from everything ended + me + claimedNames), so the
-client never merges deltas. Identity = Telegram account id; one global unique
+its actions + `debts` summed from everything ended + me + isMember + claimedNames),
+so the client never merges deltas. Identity = Telegram account id; one global unique
 `profiles.username` (auto-synced to the Telegram @handle until customized) +
 `profiles.game_types` (first-run checklist; null = not chosen) +
 `profiles.payout_presets`, plus a renamable per-group seat name in `members`.
-Money lives in SESSIONS: one active per group (partial unique index), started
-with its own payout config (or `settle=false` = log-only), ended manually or
-lazily 24h after start; ended sessions freeze into the group debt counter.
+**Groups (0004) are LINK-FIRST**: a group starts with an EMPTY roster + a share
+code; opening its link makes you an UNSEATED member (`members.name` null), anyone
+in the group can add placeholder names (`trackers.players`, the ROSTER, uncapped
+to 12), and claiming a seat fills your member row. `me` = your claimed seat (null
+if unseated); `isMember` = you're in the group. Money lives in SESSIONS: one
+active per group (partial unique index), started by any member with **the 3-4
+roster names actually playing** (`sessions.players`; 4 for sg4, 3 for my3) + its
+own payout config (or `settle=false` = log-only); an action's transfers are
+validated against `sessions.players` (fallback: the whole roster for legacy
+session-less rows). Ended manually or lazily 24h after start; ended sessions
+freeze into the group debt counter.
 
 ## Gotchas / history
 

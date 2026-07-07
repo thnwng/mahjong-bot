@@ -22,6 +22,7 @@ export interface Tracker {
 export interface Session {
   id: string;
   mahjong_type: string;              // 'sg4' | 'my3' (my3 = WIP)
+  players: string[];                 // the 3-4 roster names actually playing this sitting
   bases: PayoutConfig | null;
   settle: boolean;                   // false = "ownself settle" (no payout tracking)
   started_by?: string | null;
@@ -55,8 +56,9 @@ export interface TrackerState {
   actions: RemoteAction[];   // the ACTIVE session's actions ([] when no session)
   session?: Session | null;  // the active session, if one is running
   debts?: Record<string, number>; // net per player from everything already ended
-  me?: string | null;        // the player seat THIS account has claimed (null = not joined yet)
-  claimedNames?: string[];   // seats already taken (so the join screen can hide them)
+  me?: string | null;        // the seat THIS account claimed (null = in the group but unseated)
+  isMember?: boolean;        // you're in the group (opened its link), seated or not
+  claimedNames?: string[];   // seats already taken (so the roster can hide them)
 }
 
 export const syncEnabled = () => Boolean(TRACK_URL);
@@ -152,8 +154,9 @@ export const setPrefs = (gameTypes: GameType[]) => call<{ gameTypes: GameType[] 
 export const savePreset = (name: string, cfg: PayoutConfig) =>
   call<{ presets: PayoutPreset[] }>("save-preset", { name, cfg });
 
-/** Start a session in a group (409 if one is already running). */
-export const startSession = (code: string, opts: { mahjongType: string; settle: boolean; bases?: PayoutConfig }) =>
+/** Start a session in a group (409 if one is already running). `players` is the
+ *  subset of the roster actually playing this sitting (4 for sg4, 3 for my3). */
+export const startSession = (code: string, opts: { mahjongType: string; players: string[]; settle: boolean; bases?: PayoutConfig }) =>
   call<TrackerState>("start-session", { code, ...opts });
 
 /** End the group's active session; its actions freeze into the debt counter. */
@@ -164,24 +167,30 @@ export const endSession = (code: string) => call<TrackerState>("end-session", { 
  *  name is taken in this group" (409) if another seat already uses it. */
 export const renameSeat = (code: string, name: string) => call<TrackerState>("rename-seat", { code, name });
 
-/** Create a group. If `tgChatId` is set (launched from a Telegram group), the
- *  group is bound to it and the bot posts a join button into that chat.
- *  `defaultType` = what the group usually plays (prefills each session). */
-export const createTracker = (name: string, players: string[], bases: Tracker["bases"], tgChatId?: number, defaultType?: GameType) =>
-  call<TrackerState>("create", { name, players, bases, tgChatId, defaultType });
+/** Create a group. It starts with an empty roster and a share code; names and
+ *  payouts are added afterwards (names on the group page, payouts per session).
+ *  If `tgChatId` is set (launched from a Telegram group), the group is bound to
+ *  it and the bot posts a join button. `defaultType` = the usual mahjong type. */
+export const createTracker = (name: string, tgChatId?: number, defaultType?: GameType) =>
+  call<TrackerState>("create", { name, tgChatId, defaultType });
 
 /** Groups bound to a Telegram group (so members can see + join them). */
 export const listByChat = (tgChatId: number) =>
   call<{ groups: GroupSummary[] }>("list-by-chat", { tgChatId });
 
-/** Look at a group: returns whether you've claimed a seat (me) and which seats
- *  are taken (claimedNames). Does NOT join you — claiming a seat does that. */
+/** Open a group by code: this JOINS you to the group (unseated) and returns its
+ *  state — the roster, whether you've claimed a seat (me), and which seats are
+ *  taken (claimedNames). Claiming a seat / adding names happens on the group page. */
 export const openGroup = (code: string) => call<TrackerState>("open", { code });
+
+/** Add a placeholder name (a seat linked to no account) to the group roster.
+ *  Anyone already in the group can do this. */
+export const addName = (code: string, name: string) => call<TrackerState>("add-name", { code, name });
 
 /** Take over an existing (unclaimed) player seat — links your account to it. */
 export const claimSeat = (code: string, player: string) => call<TrackerState>("claim", { code, player });
 
-/** Join as a brand-new player named `name`. */
+/** Join as a brand-new player named `name` (adds it to the roster and claims it). */
 export const joinNew = (code: string, name: string) => call<TrackerState>("join-new", { code, name });
 
 /** Every group this Telegram account belongs to (any device). */

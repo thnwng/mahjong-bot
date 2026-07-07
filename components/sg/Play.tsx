@@ -300,8 +300,10 @@ export function Play({ initial, onBack, onEnded }: { initial: TrackerState; onBa
   const [recErr, setRecErr] = useState("");
   const [confirmEnd, setConfirmEnd] = useState(false);
   const code = state.tracker.code;
-  const players = state.tracker.players;
   const session = state.session || null;
+  // The players for THIS sitting are the session's chosen subset; fall back to
+  // the full roster only when there's no session (shouldn't happen on this screen).
+  const players = session?.players?.length ? session.players : state.tracker.players;
   // Money rules come from the SESSION (chosen on the start screen); the group's
   // bases are only the fallback for anything session-less.
   const bases = session?.bases || state.tracker.bases;

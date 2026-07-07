@@ -112,11 +112,12 @@ async function seatInfo(
   sb: SB,
   trackerId: string,
   userId: number,
-): Promise<{ me: string | null; claimedNames: string[] }> {
+): Promise<{ me: string | null; isMember: boolean; claimedNames: string[] }> {
   const { data } = await sb.from("members").select("user_id,name").eq("tracker_id", trackerId);
   const rows = (data || []) as Array<{ user_id: number; name: string | null }>;
   return {
-    me: rows.find((r) => Number(r.user_id) === userId)?.name ?? null,
+    me: rows.find((r) => Number(r.user_id) === userId)?.name ?? null,   // your claimed seat (null = unseated)
+    isMember: rows.some((r) => Number(r.user_id) === userId),           // you're in the group (may be unseated)
     claimedNames: rows.map((r) => r.name).filter((n): n is string => !!n),
   };
 }
@@ -129,9 +130,11 @@ async function seatInfo(
 const SESSION_MS = 24 * 3600 * 1000;
 // Keep in sync with GAME_TYPES in lib/sg/remote.ts (the client copy).
 const GAME_TYPES = ["sg4", "my3", "riichi"];
+const ROSTER_MAX = 12; // a group holds more names than one table seats
+const seatsFor = (mahjongType: string) => (mahjongType === "my3" ? 3 : 4);
 
 type SessionRow = {
-  id: string; mahjong_type: string; bases: unknown; settle: boolean;
+  id: string; mahjong_type: string; players: unknown; bases: unknown; settle: boolean;
   started_by: string | null; started_at: string; ended_at: string | null;
 };
 
@@ -146,6 +149,20 @@ async function activeSession(sb: SB, trackerId: string): Promise<SessionRow | nu
   const { data } = await sb.from("sessions").select()
     .eq("tracker_id", trackerId).is("ended_at", null).maybeSingle();
   return (data as SessionRow | null) || null;
+}
+
+// Belt-and-suspenders for the 0004 deploy window: if a session is active with no
+// frozen player list (e.g. one started by the pre-0004 function, which didn't set
+// players), pin its players to `roster` BEFORE the caller grows the roster — so a
+// name added mid-session can never leak into that in-flight sitting's money. A
+// no-op for new-function sessions (which always carry their 3-4 players).
+async function freezeStaleSession(sb: SB, trackerId: string, roster: string[]): Promise<void> {
+  if (!roster.length) return;
+  const s = await activeSession(sb, trackerId);
+  const sp = Array.isArray((s as SessionRow | null)?.players) ? (s as unknown as { players: unknown[] }).players : [];
+  if (s && sp.length === 0) {
+    await sb.from("sessions").update({ players: roster }).eq("id", s.id);
+  }
 }
 
 // PostgREST silently caps any select at 1000 rows — fatal for money queries
@@ -193,7 +210,7 @@ async function groupState(sb: SB, tracker: Record<string, unknown>, userId: numb
     }
   }
   const info = await seatInfo(sb, tid, userId);
-  return { tracker, actions, session, debts, me: info.me, claimedNames: info.claimedNames };
+  return { tracker, actions, session, debts, me: info.me, isMember: info.isMember, claimedNames: info.claimedNames };
 }
 
 // --- Display names (one per Telegram account; NOT unique) ---------------------
@@ -347,11 +364,14 @@ Deno.serve(async (req) => {
     }
 
     if (op === "create") {
-      const { name, players, bases, tgChatId, defaultType } = body as unknown as {
-        name: string; players: string[]; bases: unknown; tgChatId?: number; defaultType?: string;
+      // A group starts as just a name + share code with an EMPTY roster. Names
+      // (placeholders) are added on the group page; payouts are chosen per
+      // session. The creator joins immediately (unseated) so the group is theirs.
+      if (!userId) return json({ error: "no account" }, 401);
+      const { name: rawName, tgChatId, defaultType } = body as unknown as {
+        name?: string; tgChatId?: number; defaultType?: string;
       };
-      if (!name || !Array.isArray(players) || players.length < 2) return json({ error: "name + >=2 players required" }, 400);
-      if (players.length > 4) return json({ error: "max 4 players per group" }, 400);
+      const name = String(rawName || "").trim() || "Mahjong";
       const chat = typeof tgChatId === "number" && Number.isFinite(tgChatId) ? tgChatId : null;
       // What this group usually plays; prefills each session's type.
       const dtype = defaultType === "my3" ? "my3" : "sg4";
@@ -359,12 +379,16 @@ Deno.serve(async (req) => {
       for (let i = 0; i < 3; i++) {
         const { data, error } = await sb
           .from("trackers")
-          .insert({ code, name, players, bases, tg_chat_id: chat, default_type: dtype })
+          .insert({ code, name, players: [], tg_chat_id: chat, default_type: dtype })
           .select()
           .single();
         if (!error) {
+          // The creator becomes an unseated member (name null) so they own the
+          // group and can add names / start a session without first claiming.
+          const { error: me } = await sb.from("members").insert({ tracker_id: data.id, user_id: userId, name: null });
+          if (me && me.code !== "23505") throw me; // 23505 = already a member (shouldn't happen on a fresh tracker)
           if (chat) await announceGroup(chat, name, actioner, code); // invite the group
-          return json({ tracker: data, actions: [], session: null, debts: {}, me: null, claimedNames: [] }); // creator claims a seat next
+          return json(await groupState(sb, data, userId));
         }
         if (error.code === "23505") code = randomCode(); // code collision, retry
         else throw error;
@@ -373,27 +397,57 @@ Deno.serve(async (req) => {
     }
 
     if (op === "start-session" || op === "end-session") {
-      // Sessions: one sitting at the table. Only claimed members may start/end.
+      // Sessions: one sitting at the table. Any member (seated or not) may start/end.
       if (!userId) return json({ error: "no account" }, 401);
       const code = String((body as { code?: string }).code || "").toUpperCase();
       const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
       if (e1 || !tracker) return json({ error: "group not found" }, 404);
       const info = await seatInfo(sb, tracker.id, userId);
-      if (!info.me) return json({ error: "join the group first" }, 403);
+      if (!info.isMember) return json({ error: "join the group first" }, 403);
 
       if (op === "start-session") {
         await autoEndStale(sb, tracker.id);
         const mt = String((body as { mahjongType?: string }).mahjongType || tracker.default_type || "sg4");
         if (mt !== "sg4" && mt !== "my3") return json({ error: "unknown mahjong type" }, 400);
+        // A session records exactly the 3-4 roster names actually playing it.
+        const need = seatsFor(mt);
+        const rawPlayers = (body as { players?: unknown }).players;
+        const players = [...new Set((Array.isArray(rawPlayers) ? rawPlayers : []).map(String))];
+        if (players.length !== need) return json({ error: `pick exactly ${need} players` }, 400);
+        const roster = new Set(Array.isArray(tracker.players) ? tracker.players : []);
+        if (players.some((p) => !roster.has(p))) return json({ error: "a chosen player isn't in the group" }, 400);
         const settle = (body as unknown as { settle?: boolean }).settle !== false;
         const bases = settle ? ((body as unknown as { bases?: unknown }).bases ?? tracker.bases) : null;
         // The one-active-per-group rule is the partial unique index, so a racing
         // second start loses with 23505 — never two live sessions.
-        const { error: se } = await sb.from("sessions")
-          .insert({ tracker_id: tracker.id, mahjong_type: mt, bases, settle, started_by: info.me });
+        const { data: inserted, error: se } = await sb.from("sessions")
+          .insert({ tracker_id: tracker.id, mahjong_type: mt, players, bases, settle, started_by: info.me ?? actioner })
+          .select("id").single();
         if (se) {
           if ((se as { code?: string }).code === "23505") return json({ error: "a session is already running" }, 409);
           throw se;
+        }
+        // TOCTOU guard: a rename that committed between the roster read above and
+        // this insert would pin a now-nonexistent name into sessions.players (the
+        // rename's own sessions rewrite can't touch a not-yet-inserted row). Re-read
+        // BOTH the roster and this session's stored players FROM THE DB (a rename
+        // that lands after the insert already rewrote the row, so trusting the
+        // insert-time value would falsely condemn a valid session). If the fresh
+        // session still holds a name no longer in the roster, undo it and ask the
+        // client to retry — by then the rename is settled. Only act on a positive
+        // divergence, so a transient read never deletes a valid session.
+        const sid = (inserted as { id: string }).id;
+        const [{ data: freshS }, { data: freshT }] = await Promise.all([
+          sb.from("sessions").select("players").eq("id", sid).maybeSingle(),
+          sb.from("trackers").select("players").eq("id", tracker.id).maybeSingle(),
+        ]);
+        if (freshS && freshT) {
+          const freshRoster = new Set(Array.isArray(freshT.players) ? freshT.players : []);
+          const sPlayers = Array.isArray(freshS.players) ? freshS.players as string[] : [];
+          if (sPlayers.some((p) => !freshRoster.has(p))) {
+            await sb.from("sessions").delete().eq("id", sid);
+            return json({ error: "roster changed — refresh and try again" }, 409);
+          }
         }
       } else {
         // End the active session; its actions freeze into the debt counter.
@@ -417,57 +471,110 @@ Deno.serve(async (req) => {
         .order("created_at", { ascending: false });
       if (error) throw error;
       const groups = (data || [])
-        .filter((t) => Array.isArray(t.players) && t.players.length >= 2)
+        .filter((t) => Array.isArray(t.players))
         .map((t) => ({ code: t.code, name: t.name, players: (t.players as string[]).length }));
       return json({ groups });
     }
 
-    if (op === "open" || op === "claim" || op === "join-new") {
-      // open  = look at a group (no membership change) -> returns whether you've
-      //         claimed a seat (me) and which seats are taken (claimedNames).
-      // claim = take over an existing unclaimed player seat.
-      // join-new = add yourself as a brand-new player.
+    if (op === "open") {
+      // Opening a group's link puts you IN it (unseated member, name null) so you
+      // can add names, claim a seat, or start a session. Idempotent: if you're
+      // already a member (seated or not) it changes nothing.
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      if (userId) {
+        const { error: ie } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: null });
+        if (ie && ie.code !== "23505") throw ie; // 23505 = already a member; keep their existing (maybe seated) row
+      }
+      return json(await groupState(sb, tracker, userId));
+    }
+
+    if (op === "add-name") {
+      // Add a placeholder name (a seat linked to no account) to the roster.
+      // Anyone already in the group can do this. Capped at ROSTER_MAX.
+      if (!userId) return json({ error: "no account" }, 401);
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      const info = await seatInfo(sb, tracker.id, userId);
+      if (!info.isMember) return json({ error: "join the group first" }, 403);
+      const raw = String((body as { name?: string }).name || "").trim();
+      if (!validName(raw)) return json({ error: `name must be 1-${NAME_MAX} characters` }, 400);
+      const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
+      if (players.includes(raw)) return json({ error: "that name is already in the group" }, 409);
+      if (players.length >= ROSTER_MAX) return json({ error: `this group already has ${ROSTER_MAX} names` }, 400);
+      await freezeStaleSession(sb, tracker.id, players); // pin any in-flight sitting before the roster grows
+      // add_player appends atomically (guarded by `not (players ? raw)`).
+      const { error: re } = await sb.rpc("add_player", { p_id: tracker.id, p_name: raw });
+      if (re) throw re;
+      tracker.players = [...players, raw];
+      return json(await groupState(sb, tracker, userId));
+    }
+
+    if (op === "claim" || op === "join-new") {
+      // Take a seat: an existing placeholder name (claim) or a brand-new one
+      // (join-new, which also adds it to the roster). If you're already an
+      // unseated member, this FILLS your seat; otherwise it inserts a member row.
+      if (!userId) return json({ error: "no account" }, 401);
       const code = String((body as { code?: string }).code || "").toUpperCase();
       const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
       if (e1 || !tracker) return json({ error: "group not found" }, 404);
 
-      let joinedName: string | null = null; // set on a successful claim/join, then announced
+      const { data: memRow } = await sb.from("members").select("id,name")
+        .eq("tracker_id", tracker.id).eq("user_id", userId).maybeSingle();
+      const mem = memRow as { id: string; name: string | null } | null;
+      if (mem && mem.name) return json({ error: "you already have a seat in this group" }, 409);
+      const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
+
+      let seat: string;
       if (op === "claim") {
-        const player = String((body as { player?: string }).player || "");
-        const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
-        if (!players.includes(player)) return json({ error: "no such player" }, 400);
-        const { error: ce } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: player });
-        if (ce) {
-          if (ce.code === "23505") return json({ error: "you already joined this group, or that player is taken" }, 409);
-          throw ce;
+        seat = String((body as { player?: string }).player || "");
+        if (!players.includes(seat)) return json({ error: "no such player" }, 400);
+      } else {
+        seat = String((body as { name?: string }).name || "").trim();
+        if (!validName(seat)) return json({ error: `name must be 1-${NAME_MAX} characters` }, 400);
+        if (players.includes(seat)) return json({ error: "that name is already in the group" }, 409);
+        if (players.length >= ROSTER_MAX) return json({ error: `this group already has ${ROSTER_MAX} names` }, 400);
+      }
+
+      // Set the seat: fill an existing unseated member, or insert a new member
+      // row. The unique (tracker_id, name) constraint makes concurrent claims of
+      // the same seat race-safe — the loser gets 23505.
+      if (mem) {
+        const { data: upd, error: ue } = await sb.from("members")
+          .update({ name: seat }).eq("tracker_id", tracker.id).eq("user_id", userId).is("name", null).select("id");
+        if (ue) {
+          if (ue.code === "23505") return json({ error: "that name is already taken" }, 409);
+          throw ue;
         }
-        joinedName = player;
-      } else if (op === "join-new") {
-        const raw = String((body as { name?: string }).name || "").trim();
-        if (!raw) return json({ error: "name required" }, 400);
-        const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
-        if (players.length >= 4) return json({ error: "this group is full (max 4 players)" }, 400);
-        // Claim the seat FIRST: if this fails (already joined, or name taken) we
-        // return 409 having touched nothing — no orphan player can be created.
-        const { error: ie } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: raw });
+        if (!upd || !upd.length) {
+          // Our unseated row was filled by a concurrent call. If it landed on the
+          // seat we wanted, treat as success; otherwise report it's taken.
+          const { data: re } = await sb.from("members").select("name")
+            .eq("tracker_id", tracker.id).eq("user_id", userId).maybeSingle();
+          if ((re as { name?: string } | null)?.name !== seat) return json({ error: "that name is already taken" }, 409);
+        }
+      } else {
+        const { error: ie } = await sb.from("members").insert({ tracker_id: tracker.id, user_id: userId, name: seat });
         if (ie) {
           if (ie.code === "23505") return json({ error: "you already joined this group, or that name is taken" }, 409);
           throw ie;
         }
-        // Then ensure the player exists in the roster. add_player appends
-        // atomically (guarded by `not (players ? raw)`), so concurrent joins
-        // can't lose each other's seats.
-        if (!players.includes(raw)) {
-          const { error: re } = await sb.rpc("add_player", { p_id: tracker.id, p_name: raw });
-          if (re) throw re;
-          tracker.players = [...players, raw];
-        }
-        joinedName = raw;
+      }
+
+      // For join-new, add the new name to the roster — AFTER the seat is set, so a
+      // failed claim never leaves an orphan roster name. add_player is idempotent.
+      if (op === "join-new" && !players.includes(seat)) {
+        await freezeStaleSession(sb, tracker.id, players); // pin any in-flight sitting before the roster grows
+        const { error: re } = await sb.rpc("add_player", { p_id: tracker.id, p_name: seat });
+        if (re) throw re;
+        tracker.players = [...players, seat];
       }
 
       // Notify the bound Telegram group that this seat is now claimed.
       const chatId = Number((tracker as { tg_chat_id?: number }).tg_chat_id);
-      if (joinedName && Number.isFinite(chatId) && chatId) await announceJoin(chatId, joinedName);
+      if (Number.isFinite(chatId) && chatId) await announceJoin(chatId, seat);
 
       return json(await groupState(sb, tracker, userId));
     }
@@ -485,7 +592,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       type Row = { name: string | null; trackers: { id: string; code: string; name: string; players: string[] } | null };
       const rows = ((data || []) as unknown as Row[])
-        .filter((m) => m.trackers && Array.isArray(m.trackers.players) && m.trackers.players.length >= 2);
+        .filter((m) => m.trackers && Array.isArray(m.trackers.players));
       const ids = rows.map((m) => m.trackers!.id);
       const acts = new Map<string, { net: Map<string, number>; last: string }>();
       const live = new Set<string>();
@@ -536,14 +643,17 @@ Deno.serve(async (req) => {
       if (op === "action") {
         const { summary, transfers, meta } = body as unknown as { summary: string; transfers: Array<{ payer?: string; payee?: string }>; meta?: unknown };
         if (!summary || !Array.isArray(transfers)) return json({ error: "summary + transfers required" }, 400);
-        // Reject transfers that name a seat no longer in the roster — e.g. a
-        // rename landed while this client still held the old name. Otherwise the
-        // money would attach to a ghost name and balances wouldn't sum to zero.
-        const roster = new Set(Array.isArray(tracker.players) ? tracker.players : []);
-        const stale = transfers.flatMap((t) => [t.payer, t.payee]).find((n) => n && !roster.has(n));
-        if (stale) return json({ error: "roster changed — refresh and try again" }, 409);
         await autoEndStale(sb, tracker.id);
         const session = await activeSession(sb, tracker.id);
+        // Money only moves among the session's chosen players (fallback: the full
+        // roster for a session-less bundle). Reject transfers naming anyone else —
+        // e.g. a rename landed, or a name isn't in this sitting — so amounts can't
+        // attach to a ghost name and balances always sum to zero.
+        const sPlayers = Array.isArray((session as SessionRow | null)?.players)
+          ? ((session as unknown as { players: string[] }).players) : [];
+        const playing = new Set(sPlayers.length ? sPlayers : (Array.isArray(tracker.players) ? tracker.players : []));
+        const stale = transfers.flatMap((t) => [t.payer, t.payee]).find((n) => n && !playing.has(n));
+        if (stale) return json({ error: "players changed — refresh and try again" }, 409);
         // New clients echo the session they computed the money against; if it
         // ended (or was replaced) in the meantime, refuse rather than attach
         // amounts computed under different rules.

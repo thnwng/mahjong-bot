@@ -1,21 +1,28 @@
 "use client";
 
-// The group page (between home and the live session): running debt counter
-// tallied from ended sessions, the active-session banner, and the
-// start-a-session setup screen (mahjong type + payout structure).
+// Two screens for a group:
+//  - GroupScreen: the group's share link, its ROSTER of names (add placeholders,
+//    claim a seat = "join as this name"), the debt counter, and the entry point
+//    to start a session.
+//  - NewSession: one page that walks type -> who's playing (a subset of the
+//    roster) -> payouts, with later sections greyed until the earlier one's done.
 
 import { useMemo, useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
 import { PayoutConfig, money } from "@/lib/sg/payout";
-import { PayoutScaleInfo } from "./InfoDot";
+import { PayoutEditor } from "./PayoutEditor";
 import {
   TrackerState,
   PayoutPreset,
   GAME_TYPES,
-  BUILTIN_PRESETS,
-  savePreset,
+  addName,
+  claimSeat,
+  joinNew,
   BOT_APP_LINK,
 } from "@/lib/sg/remote";
+
+const seatsFor = (mahjongType: string) => (mahjongType === "my3" ? 3 : 4);
+const typeLabel = (v: string) => GAME_TYPES.find((g) => g.v === v)?.label || v;
 
 // Greedy "who pays who" suggestion from net balances: biggest debtor pays
 // biggest creditor until everyone is square. Not unique, but minimal-ish.
@@ -35,8 +42,6 @@ export function settleUp(net: Record<string, number>): { from: string; to: strin
   return out;
 }
 
-const typeLabel = (v: string) => GAME_TYPES.find((g) => g.v === v)?.label || v;
-
 const hoursLeft = (startedAt: string) => {
   const ms = new Date(startedAt).getTime() + 24 * 3600 * 1000 - Date.now();
   return Math.max(0, Math.round(ms / 3600000));
@@ -44,12 +49,14 @@ const hoursLeft = (startedAt: string) => {
 
 export function GroupScreen({
   state,
+  onState,
   busy,
   onNewSession,
   onEnterSession,
   onBack,
 }: {
   state: TrackerState;
+  onState: (s: TrackerState) => void;
   busy?: boolean;
   onNewSession: () => void;
   onEnterSession: () => void;
@@ -59,20 +66,86 @@ export function GroupScreen({
   const t = state.tracker;
   const session = state.session || null;
   const debts = state.debts || {};
-  const players = t.players || [];
-  const net = players.map((p) => ({ p, v: debts[p] || 0 }));
+  const roster = t.players || [];
+  const claimed = new Set(state.claimedNames || []);
+  const me = state.me || null;
+  const shareLink = `${BOT_APP_LINK}?startapp=${t.code}`;
+
+  const [work, setWork] = useState(false);
+  const [gErr, setGErr] = useState("");
+  const [newName, setNewName] = useState("");
+  const [mine, setMine] = useState(false); // "the name I'm adding is me" (join + claim)
+
+  const run = async (fn: () => Promise<TrackerState>) => {
+    setWork(true); setGErr("");
+    try { onState(await fn()); haptic("success"); }
+    catch (e) { haptic("error"); setGErr(String((e as Error).message || e)); }
+    finally { setWork(false); }
+  };
+  const addPlayer = () => {
+    const n = newName.trim();
+    if (!n) return;
+    setNewName("");
+    const code = t.code;
+    run(() => (mine && !me ? joinNew(code, n) : addName(code, n)));
+    setMine(false);
+  };
+  const claim = (name: string) => run(() => claimSeat(t.code, name));
+
+  const net = roster.map((p) => ({ p, v: debts[p] || 0 }));
   const anyDebt = net.some((x) => Math.abs(x.v) > 0.004);
   const suggestions = useMemo(() => settleUp(debts), [debts]);
-  const shareLink = `${BOT_APP_LINK}?startapp=${t.code}`;
+  const enoughToStart = roster.length >= 3;
 
   return (
     <div>
       <h1>{t.name || t.code}</h1>
       <div className="result" style={{ marginTop: 0, marginBottom: 14 }}>
-        <div className="line"><strong>Code {t.code}</strong>{state.me ? <> · you are <strong>{state.me}</strong></> : null}</div>
+        <div className="line"><strong>Code {t.code}</strong>{me ? <> · you are <strong>{me}</strong></> : null}</div>
         <div className="line" style={{ fontSize: "0.8rem", wordBreak: "break-all" }}>{shareLink}</div>
+        <div className="line" style={{ fontSize: "0.78rem", opacity: 0.65 }}>Share this link (or the code) so others can join.</div>
       </div>
 
+      {/* Roster: every name in the group. Anyone can add names; if you haven't
+          claimed a seat, tap "this is me" on a name (or add your own). */}
+      <h2>Players <span style={{ opacity: 0.5, fontWeight: 400, fontSize: "0.85rem" }}>({roster.length})</span></h2>
+      {roster.length === 0 ? (
+        <p style={{ opacity: 0.7, fontSize: "0.88rem", marginTop: 0 }}>No names yet — add everyone who&apos;ll play (you can add placeholders and let people claim them).</p>
+      ) : (
+        <div className="balances">
+          {roster.map((p) => (
+            <div key={p} className="bal-row" style={{ alignItems: "center" }}>
+              <span>
+                {p}
+                {me === p ? <strong style={{ color: "var(--button)" }}> · you</strong>
+                  : claimed.has(p) ? <span style={{ opacity: 0.5, fontSize: "0.78rem" }}> · joined</span>
+                  : <span style={{ opacity: 0.5, fontSize: "0.78rem" }}> · open</span>}
+              </span>
+              {!me && !claimed.has(p) && (
+                <button className="chip" disabled={work || busy} onClick={() => claim(p)}>this is me</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="row" style={{ alignItems: "center", gap: 8, marginTop: 8 }}>
+        <input className="text-input" style={{ marginBottom: 0 }} placeholder={mine ? "your name" : "add a name"}
+          maxLength={30} value={newName} onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") addPlayer(); }} />
+        <button className="chip" disabled={work || busy || !newName.trim()} onClick={addPlayer}>
+          {mine && !me ? "Join" : "+ Add"}
+        </button>
+      </div>
+      {!me && (
+        <label className="row" style={{ alignItems: "center", gap: 6, marginTop: 4, fontSize: "0.8rem", opacity: 0.8, cursor: "pointer" }}>
+          <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
+          <span>This name is me (join as it)</span>
+        </label>
+      )}
+      {gErr && <p className="err">{gErr}</p>}
+
+      {/* Session */}
       {session ? (
         <>
           <h2>Session running</h2>
@@ -82,7 +155,10 @@ export function GroupScreen({
               {session.settle === false ? " · no payouts (ownself settle)" : ""}
             </div>
             <div className="line" style={{ fontSize: "0.85rem", opacity: 0.75 }}>
-              Started by {session.started_by || "?"} · auto-ends in about {hoursLeft(session.started_at)}h (or end it manually inside)
+              {(session.players || []).join(", ")}
+            </div>
+            <div className="line" style={{ fontSize: "0.8rem", opacity: 0.65 }}>
+              Started by {session.started_by || "?"} · auto-ends in about {hoursLeft(session.started_at)}h (or end it inside)
             </div>
           </div>
           <button className="primary-btn" disabled={busy} onClick={() => { haptic("light"); onEnterSession(); }}>
@@ -93,12 +169,12 @@ export function GroupScreen({
         <>
           <h2>No session running</h2>
           <p style={{ opacity: 0.7, fontSize: "0.88rem", marginTop: 0 }}>
-            Start one when you sit down — it tallies into the debt counter when it ends (manually, or automatically after 24h).
+            Start one when you sit down — pick who&apos;s playing and the payouts. It tallies into the debt counter when it ends.
           </p>
-          <button className="primary-btn" disabled={busy || !state.me} onClick={() => { haptic("light"); onNewSession(); }}>
+          <button className="primary-btn" disabled={busy || work || !enoughToStart} onClick={() => { haptic("light"); onNewSession(); }}>
             Start a session
           </button>
-          {!state.me && <p className="err">Join the group (pick your seat) before starting a session.</p>}
+          {!enoughToStart && <p style={{ opacity: 0.7, fontSize: "0.83rem" }}>Add at least 3 names above to start a session.</p>}
         </>
       )}
 
@@ -108,7 +184,7 @@ export function GroupScreen({
       ) : (
         <>
           <div className="balances">
-            {net.map(({ p, v }) => (
+            {net.filter((x) => Math.abs(x.v) > 0.004).map(({ p, v }) => (
               <div key={p} className="bal-row">
                 <span>{p}</span>
                 <span className={"bal " + (v >= 0 ? "pos" : "neg")}>{v >= 0 ? "+" : ""}{v.toFixed(2)}</span>
@@ -135,18 +211,8 @@ export function GroupScreen({
 
 // ------------------------------------------------------------ session setup
 
-// Built-in payout presets. "Group default" (the payouts chosen at group
-// creation) is added dynamically in front.
-const BUILTINS: PayoutPreset[] = BUILTIN_PRESETS;
-const NONE = "__none__"; // "don't need, ownself settle"
-
-const cfgToFields = (c: PayoutConfig) => ({
-  discard: String(c.tai ?? 0.4),
-  zimo: String(c.zimo ?? (c.tai ?? 0.4) * 2),
-  yao: String(c.yao ?? 0.1),
-  gang: String(c.gang ?? 0.1),
-  maxTai: String(c.maxTai ?? 10),
-});
+// A locked (not-yet-relevant) section is dimmed and non-interactive.
+const lockStyle = (locked: boolean) => (locked ? { opacity: 0.4, pointerEvents: "none" as const } : undefined);
 
 export function NewSession({
   state,
@@ -154,191 +220,102 @@ export function NewSession({
   busy,
   error,
   onStart,
-  onPresets,
   onBack,
 }: {
   state: TrackerState;
   presets: PayoutPreset[];
   busy?: boolean;
   error?: string;
-  onStart: (opts: { mahjongType: string; settle: boolean; bases?: PayoutConfig }) => void;
-  onPresets: (p: PayoutPreset[]) => void;
+  onStart: (opts: { mahjongType: string; players: string[]; settle: boolean; bases?: PayoutConfig }) => void;
   onBack: () => void;
 }) {
   useBackButton(onBack);
   const t = state.tracker;
-  const options: PayoutPreset[] = useMemo(
-    () => [{ name: "Group default", cfg: t.bases || BUILTINS[0].cfg }, ...BUILTINS, ...presets],
-    [t.bases, presets],
-  );
+  const roster = t.players || [];
 
   const [mtype, setMtype] = useState(t.default_type === "my3" ? "my3" : "sg4");
-  const [mode, setMode] = useState(options[0].name); // preset name, or NONE
-  const [fields, setFields] = useState(cfgToFields(options[0].cfg));
-  const [yaoOn, setYaoOn] = useState(t.bases?.yaoOn !== false);
-  const [gangOn, setGangOn] = useState(t.bases?.gangOn !== false);
-  const [presetName, setPresetName] = useState("");
-  const [savingPreset, setSavingPreset] = useState(false);
-  const [presetErr, setPresetErr] = useState("");
-  const [presetMsg, setPresetMsg] = useState("");
+  const need = seatsFor(mtype);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [payCfg, setPayCfg] = useState<PayoutConfig | null>(null);
 
-  const settle = mode !== NONE;
-  const num = (s: string, d: number) => { const v = parseFloat(s); return isFinite(v) && v >= 0 ? v : d; };
-  const mt = Math.max(1, Math.min(20, Math.floor(num(fields.maxTai, 10))));
+  const enoughNames = roster.length >= need;
+  const playersPicked = selected.length === need;
+  const ready = enoughNames && playersPicked && payCfg !== null;
 
-  const picked = options.find((o) => o.name === mode);
-  // Did the user edit the numbers / toggles away from the picked preset?
-  const fieldsDirty = picked ? JSON.stringify(cfgToFields(picked.cfg)) !== JSON.stringify(fields) : false;
-  const togglesDirty = picked
-    ? (picked.cfg.yaoOn !== false) !== yaoOn || (picked.cfg.gangOn !== false) !== gangOn
-    : false;
-  const dirty = settle && (fieldsDirty || togglesDirty);
-
-  const currentCfg = (): PayoutConfig => {
-    // A preset can carry more than the five editable fields — the doubling cap
-    // and exact per-tai tables from the group's Advanced setup. Keep them as
-    // long as the numbers weren't edited; once they are, the edited doubling
-    // values ARE the new rule and stale tables would contradict them.
-    const keep: Partial<PayoutConfig> = picked && !fieldsDirty
-      ? {
-          ...(picked.cfg.cap != null ? { cap: picked.cfg.cap } : {}),
-          ...(picked.cfg.discardTable ? { discardTable: picked.cfg.discardTable } : {}),
-          ...(picked.cfg.zimoTable ? { zimoTable: picked.cfg.zimoTable } : {}),
-        }
-      : {};
-    return {
-      ...keep,
-      // Self-draw bonus is set at group creation and has no field here, so carry
-      // it straight through from the picked scheme (independent of the table).
-      ...(picked?.cfg.zimoBonus ? { zimoBonus: picked.cfg.zimoBonus } : {}),
-      tai: num(fields.discard, 0.4),
-      zimo: num(fields.zimo, num(fields.discard, 0.4) * 2),
-      yao: num(fields.yao, 0.1),
-      gang: num(fields.gang, 0.1),
-      maxTai: mt,
-      yaoOn,
-      gangOn,
-    };
-  };
-
-  const pickMode = (name: string) => {
+  const toggle = (name: string) => {
     haptic("selection");
-    setMode(name); setPresetMsg(""); setPresetErr("");
-    if (name === NONE) return;
-    const opt = options.find((o) => o.name === name);
-    if (opt) {
-      setFields(cfgToFields(opt.cfg));
-      setYaoOn(opt.cfg.yaoOn !== false);
-      setGangOn(opt.cfg.gangOn !== false);
-    }
+    setSelected((prev) => {
+      if (prev.includes(name)) return prev.filter((p) => p !== name);
+      if (prev.length >= need) return prev; // can't pick more than the table seats
+      return [...prev, name];
+    });
   };
 
-  const halve = () => {
-    haptic("light");
-    const h = (s: string, d: number) => String(Math.round(num(s, d) / 2 * 100) / 100);
-    setFields((f) => ({ ...f, discard: h(f.discard, 0.4), zimo: h(f.zimo, 0.2), yao: h(f.yao, 0.1), gang: h(f.gang, 0.1) }));
+  // Switching type changes how many seats there are; drop selections that no
+  // longer fit so we never start with the wrong count.
+  const pickType = (v: string) => {
+    haptic("selection");
+    setMtype(v);
+    setSelected((prev) => prev.slice(0, seatsFor(v)));
   };
 
-  const doSavePreset = async () => {
-    const nm = presetName.trim();
-    if (!nm) { setPresetErr("Give it a name."); return; }
-    setSavingPreset(true); setPresetErr(""); setPresetMsg("");
-    try {
-      const { presets: next } = await savePreset(nm, currentCfg());
-      haptic("success"); onPresets(next); setMode(nm); setPresetName(""); setPresetMsg(`Saved "${nm}".`);
-    } catch (e) { haptic("error"); setPresetErr(String((e as Error).message || e)); }
-    finally { setSavingPreset(false); }
+  const start = () => {
+    if (!ready) return;
+    onStart({ mahjongType: mtype, players: selected, settle: true, bases: payCfg! });
   };
-
-  const start = () => onStart(settle ? { mahjongType: mtype, settle: true, bases: currentCfg() } : { mahjongType: mtype, settle: false });
-
-  const disabledStyle = settle ? undefined : { opacity: 0.35, pointerEvents: "none" as const };
 
   return (
     <div>
       <h1>Start a session</h1>
       <p style={{ opacity: 0.7, fontSize: "0.85rem", marginTop: 0 }}>
-        One sitting at the table. It ends when you end it — or automatically 24 hours after starting — and the money tallies into the group&apos;s debt counter.
+        One sitting at the table. Pick the type, who&apos;s playing, and the payouts. It tallies into the group&apos;s debt counter when it ends.
       </p>
 
+      {/* 1. Type */}
       <h2>Mahjong type</h2>
       <div className="row">
         {[{ v: "sg4", label: "Singaporean (4p)" }, { v: "my3", label: "Malaysian (3p) — WIP" }].map((o) => (
           <div key={o.v} className={"chip" + (mtype === o.v ? " selected" : "")}
-            onClick={() => { haptic("selection"); setMtype(o.v); }}>{o.label}</div>
+            onClick={() => pickType(o.v)}>{o.label}</div>
         ))}
       </div>
       {mtype === "my3" && (
         <p style={{ opacity: 0.65, fontSize: "0.8rem" }}>
-          Malaysian scoring isn&apos;t built yet — the session will run with the Singaporean actions for now. (WIP)
+          Malaysian scoring isn&apos;t built yet — the session runs with the Singaporean actions for now. (WIP)
         </p>
       )}
 
-      <h2>Payout structure</h2>
-      <select className="text-input" value={mode} onChange={(e) => pickMode(e.target.value)}>
-        {options.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
-        <option value={NONE}>Don&apos;t need — ownself settle</option>
-      </select>
+      {/* 2. Who's playing */}
+      <h2>Who&apos;s playing <span style={{ opacity: 0.5, fontWeight: 400, fontSize: "0.85rem" }}>({selected.length}/{need})</span></h2>
+      {!enoughNames ? (
+        <p className="err">This group has {roster.length} name{roster.length === 1 ? "" : "s"} — add {need - roster.length} more on the group page to play {need}-player.</p>
+      ) : (
+        <>
+          <p style={{ opacity: 0.7, fontSize: "0.82rem", marginTop: 0 }}>Tick exactly {need} players for this sitting.</p>
+          <div className="choices">
+            {roster.map((p) => {
+              const on = selected.includes(p);
+              const full = !on && selected.length >= need;
+              return (
+                <div key={p} className={"choice-btn" + (on ? " selected-choice" : "")}
+                  style={full ? { opacity: 0.4 } : undefined}
+                  onClick={() => (!full || on) && toggle(p)}>
+                  {p}{on && <small>playing</small>}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
-      <div style={disabledStyle}>
-        <div className="row" style={{ alignItems: "center" }}>
-          <label className="vlabel">shooter pays
-            <input className="text-input small" inputMode="decimal" value={fields.discard} disabled={!settle}
-              onChange={(e) => setFields((f) => ({ ...f, discard: e.target.value }))} /></label>
-          <label className="vlabel">self-draw (zimo, each)
-            <input className="text-input small" inputMode="decimal" value={fields.zimo} disabled={!settle}
-              onChange={(e) => setFields((f) => ({ ...f, zimo: e.target.value }))} />
-            <span className="unit">per pax</span></label>
-          <label className="vlabel">max tai
-            <input className="text-input small" inputMode="numeric" value={fields.maxTai} disabled={!settle}
-              onChange={(e) => setFields((f) => ({ ...f, maxTai: e.target.value }))} /></label>
-        </div>
-        <div className="row" style={{ alignItems: "center" }}>
-          <h2 className="info-head" style={{ margin: "6px 0 0", width: "100%" }}>Bite &amp; gang <PayoutScaleInfo /></h2>
-          <label className="vlabel">bite (yao)
-            <input className="text-input small" inputMode="decimal" value={fields.yao} disabled={!settle || !yaoOn}
-              onChange={(e) => setFields((f) => ({ ...f, yao: e.target.value }))} />
-            <span className="unit">per pax</span></label>
-          <label className="vlabel">gang (kong)
-            <input className="text-input small" inputMode="decimal" value={fields.gang} disabled={!settle || !gangOn}
-              onChange={(e) => setFields((f) => ({ ...f, gang: e.target.value }))} />
-            <span className="unit">per pax</span></label>
-        </div>
-        <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-          <button type="button" className="chip" onClick={halve}>Halve payouts</button>
-          <div className={"chip" + (yaoOn ? " on" : "")} onClick={() => { haptic("selection"); setYaoOn(!yaoOn); }}>
-            {yaoOn ? "Bite payouts: on" : "Bite payouts: off"}
-          </div>
-          <div className={"chip" + (gangOn ? " on" : "")} onClick={() => { haptic("selection"); setGangOn(!gangOn); }}>
-            {gangOn ? "Gang payouts: on" : "Gang payouts: off"}
-          </div>
-        </div>
-
-        {dirty && (
-          <div style={{ marginTop: 10 }}>
-            <p style={{ fontSize: "0.82rem", opacity: 0.75, marginBottom: 4 }}>
-              You changed the numbers — save them as your own payout type?
-            </p>
-            <div className="row" style={{ alignItems: "center" }}>
-              <input className="text-input" style={{ width: 180, marginBottom: 0 }} placeholder="preset name"
-                maxLength={30} value={presetName} onChange={(e) => setPresetName(e.target.value)} />
-              <button className="chip" disabled={savingPreset} onClick={doSavePreset}>
-                {savingPreset ? "Saving…" : "Save preset"}
-              </button>
-            </div>
-            {presetErr && <p className="err">{presetErr}</p>}
-          </div>
-        )}
-        {presetMsg && <p style={{ fontSize: "0.82rem", opacity: 0.75 }}>{presetMsg}</p>}
+      {/* 3. Payouts — the same table as the old create screen (greyed until the
+          right number of players is picked). */}
+      <h2 style={lockStyle(!playersPicked)}>Payouts</h2>
+      <div style={lockStyle(!playersPicked)}>
+        <PayoutEditor presets={presets} onChange={setPayCfg} />
       </div>
 
-      {!settle && (
-        <p style={{ opacity: 0.7, fontSize: "0.85rem" }}>
-          No payout tracking: the session just logs who won what; no balances, no debt tally.
-        </p>
-      )}
-
-      <button className="primary-btn" disabled={busy} onClick={start}>{busy ? "Starting…" : "Start session"}</button>
+      <button className="primary-btn" disabled={busy || !ready} onClick={start}>{busy ? "Starting…" : "Start session"}</button>
       {error && <p className="err">{error}</p>}
       <button className="link-btn" onClick={onBack}>← Back</button>
     </div>

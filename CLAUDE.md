@@ -28,7 +28,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |
 | `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement); apply new ones in the SQL editor BEFORE the matching function deploys |
 
-## Branch topology (as of 2026-07-09 — mirrors the Clabbers rule)
+## Branch topology (as of 2026-07-10 — mirrors the Clabbers rule)
 
 - **`main` = the DEPLOYED app.** Any push to `main` triggers BOTH deploy
   workflows: the Pages site and the Supabase Edge Functions (the real-money

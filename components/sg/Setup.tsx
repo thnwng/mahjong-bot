@@ -5,7 +5,7 @@
 // payouts are chosen per session. So this screen is deliberately tiny.
 
 import { useState } from "react";
-import { useBackButton } from "@/lib/telegram";
+import { haptic, useBackButton } from "@/lib/telegram";
 import { GameType } from "@/lib/sg/remote";
 
 export function Setup({
@@ -32,21 +32,22 @@ export function Setup({
   return (
     <div>
       <h1>{title}</h1>
-      {note && <p style={{ fontSize: "0.85rem", opacity: 0.75 }}>{note}</p>}
+      {note && <p className="hint">{note}</p>}
 
       <h2>Group name</h2>
       <input className="text-input" placeholder="e.g. Friday mahjong" value={name}
-        onChange={(e) => setName(e.target.value)} />
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !busy) onStart(name.trim() || "Mahjong", dtype); }} />
 
       <h2>Usually plays</h2>
       <div className="row">
         {[{ v: "sg4" as GameType, label: "Singaporean (4p)" }, { v: "my3" as GameType, label: "Malaysian (3p) — WIP" }].map((o) => (
-          <div key={o.v} className={"chip" + (dtype === o.v ? " selected" : "")}
-            onClick={() => setDtype(o.v)}>{o.label}</div>
+          <button type="button" key={o.v} className={"chip" + (dtype === o.v ? " selected" : "")}
+            onClick={() => { haptic("selection"); setDtype(o.v); }}>{o.label}</button>
         ))}
       </div>
 
-      <p style={{ fontSize: "0.82rem", opacity: 0.7 }}>
+      <p className="hint" style={{ marginTop: 10 }}>
         You&apos;ll get a share link. On the next screen, add everyone&apos;s names (or let them add their own),
         then set the payouts when you start a session.
       </p>

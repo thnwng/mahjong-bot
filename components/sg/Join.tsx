@@ -33,7 +33,8 @@ export function JoinForm({
     <div>
       <h1>Join a group</h1>
       <h2>Code</h2>
-      <input className="text-input" placeholder="e.g. K7P2QM" value={code} onChange={(e) => setCode(e.target.value)} />
+      <input className="text-input" placeholder="e.g. K7P2QM" value={code} onChange={(e) => setCode(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && code.trim() && !loading && !busy) join(); }} />
       <button className="primary-btn" disabled={!code.trim() || loading || busy} onClick={join}>
         {loading ? "Joining…" : "Join"}
       </button>

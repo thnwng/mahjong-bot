@@ -102,7 +102,7 @@ function ShootSelect({
           </select>
         )}
       </div>
-      <p style={{ fontSize: "0.75rem", color: "var(--text-faint)", marginTop: 6 }}>
+      <p className="fine" style={{ marginTop: 6 }}>
         The player on the left pays the one on the right. A player can&apos;t shoot themselves.
       </p>
     </div>
@@ -156,12 +156,12 @@ function ActionWizard({
       <div>
         {head}
         <h2>Confirm</h2>
-        <div className="result" style={{ marginTop: 0 }}>
+        <div className="result banner">
           <div className="line"><strong>{r.summary}</strong></div>
           {r.transfers.map((t, i) => (
             <div key={i} className="line">{t.payer} pays {t.payee} <strong>{money(t.amount)}</strong></div>
           ))}
-          {!settle && <div className="line" style={{ opacity: 0.7, fontSize: "0.85rem" }}>Log only — no payouts in this session.</div>}
+          {!settle && <div className="line meta">Log only — no payouts in this session.</div>}
         </div>
         <button className="primary-btn" onClick={() => onConfirm(r.summary, r.transfers, r.meta)}>
           Record {ACTION_TITLES[action].title}
@@ -249,19 +249,19 @@ function Dashboard({
               <div key={p} className="bal-row">
                 <span>{p}</span>
                 <span className={"bal " + ((balances[p] || 0) >= 0 ? "pos" : "neg")}>
-                  {(balances[p] || 0) >= 0 ? "+" : ""}{(balances[p] || 0).toFixed(2)}
+                  {(balances[p] || 0) >= 0 ? "+" : ""}{money(balances[p] || 0)}
                 </span>
               </div>
             ))}
           </div>
-          <p style={{ fontSize: "0.78rem", opacity: 0.65 }}>
+          <p className="fine">
             Payouts · 1 tai: shooter {money(discardValue(bases, 1))} / self-draw {money(zimoEachValue(bases, 1))} each
             {zimoBonusOf(bases) > 0 ? ` (+${money(zimoBonusOf(bases))} zimo bonus)` : ""}
             {yaoOn ? ` · bite ${money(bases.yao)}` : ""}{gangOn ? ` · gang ${money(bases.gang)} each` : ""} · up to {maxTaiOf(bases)} tai
           </p>
         </>
       ) : (
-        <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>No payouts this session — wins are logged, nothing is tallied.</p>
+        <p className="hint">No payouts this session — wins are logged, nothing is tallied.</p>
       )}
 
       <h2>Record action</h2>
@@ -284,7 +284,7 @@ function Dashboard({
         </>
       )}
 
-      <button className="link-btn" onClick={onBack}>← Menu</button>
+      <button className="link-btn" onClick={onBack}>← Back</button>
     </div>
   );
 }
@@ -351,6 +351,7 @@ export function Play({ initial, onBack, onEnded }: { initial: TrackerState; onBa
   const shareLink = `${BOT_APP_LINK}?startapp=${code}`;
 
   const record = async (summary: string, transfers: Transfer[], meta?: ActionMeta) => {
+    if (busyRef.current) return; // a mutation is already in flight
     busyRef.current = true; epochRef.current++;
     setSyncing(true); setRecErr("");
     try { const s = await addRemoteAction(code, summary, transfers, meta, session?.id); if (!sessionGone(s)) setState(s); haptic("success"); }
@@ -367,6 +368,7 @@ export function Play({ initial, onBack, onEnded }: { initial: TrackerState; onBa
   // End the sitting: freezes this session's money into the group debt counter.
   // Two-tap confirm (misclicks end a whole evening otherwise).
   const doEnd = async () => {
+    if (busyRef.current) return; // a mutation is already in flight
     if (!confirmEnd) { setConfirmEnd(true); haptic("warning"); return; }
     busyRef.current = true; epochRef.current++;
     setRecErr("");
@@ -385,13 +387,14 @@ export function Play({ initial, onBack, onEnded }: { initial: TrackerState; onBa
   // Rename your own seat (your display name in this group). The server rewrites
   // the roster + past transfers so your balance follows the new name.
   const doRename = async () => {
+    if (busyRef.current) return; // Enter + Save can't double-submit
     const nm = newSeat.trim();
     if (!nm || nm === state.me) { closeRename(); return; }
     busyRef.current = true; epochRef.current++;
-    setRenameErr("");
+    setRenameErr(""); setSyncing(true);
     try { setState(await renameSeat(code, nm)); haptic("success"); closeRename(); }
     catch (e) { haptic("error"); setRenameErr(String((e as Error).message || e)); }
-    finally { busyRef.current = false; }
+    finally { busyRef.current = false; setSyncing(false); }
   };
 
   return (
@@ -406,21 +409,19 @@ export function Play({ initial, onBack, onEnded }: { initial: TrackerState; onBa
       onRecord={record}
       onBack={onBack}
       banner={
-        <div className="result" style={{ marginTop: 0, marginBottom: 14 }}>
+        <div className="result banner">
           <div className="line">
             <strong>Code {code}</strong> {syncing ? "· syncing…" : "· live"}
             {state.me && !renaming && (
               <> · you are{" "}
-                <button className="link-btn" style={{ padding: 0, fontSize: "inherit", verticalAlign: "baseline" }}
-                  onClick={openRename}>
+                <button className="link-btn inline" onClick={openRename}>
                   {state.me} ✎
                 </button>
               </>
             )}
             {session && (
               <> ·{" "}
-                <button className="link-btn" style={{ padding: 0, fontSize: "inherit", verticalAlign: "baseline" }}
-                  onClick={doEnd}>
+                <button className="link-btn inline" onClick={doEnd}>
                   {confirmEnd ? "tap again to end session" : "end session"}
                 </button>
               </>
@@ -431,12 +432,12 @@ export function Play({ initial, onBack, onEnded }: { initial: TrackerState; onBa
               <input className="text-input small" autoFocus value={newSeat} maxLength={40}
                 onChange={(e) => setNewSeat(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") doRename(); }} />
-              <button className="chip" onClick={doRename}>Save</button>
-              <button className="chip" onClick={closeRename}>Cancel</button>
-              {renameErr && <span className="err" style={{ fontSize: "0.8rem" }}> {renameErr}</span>}
+              <button className="chip" disabled={syncing} onClick={doRename}>{syncing ? "Saving…" : "Save"}</button>
+              <button className="chip" disabled={syncing} onClick={closeRename}>Cancel</button>
+              {renameErr && <span className="err"> {renameErr}</span>}
             </div>
           )}
-          <div className="line" style={{ fontSize: "0.8rem", wordBreak: "break-all" }}>{shareLink}</div>
+          <div className="line meta" style={{ wordBreak: "break-all" }}>{shareLink}</div>
         </div>
       }
     />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { haptic } from "@/lib/telegram";
 import { analyze, WinContext, CalledMeld } from "@/lib/riichi/analyze";
 import { chiStep } from "@/lib/riichi/chi";
 import ResultCard from "./ResultCard";
@@ -69,15 +70,26 @@ export default function TilesMode({
   tsumo,
   players,
   honba,
+  fixedSeatWind,
+  fixedRoundWind,
+  onResult,
 }: {
   tsumo: boolean;
   players: number;
   honba: number;
+  // When embedded in the game's record-hand wizard, the winner's seat wind and
+  // the round wind are known from game state — seed them and hide the pickers,
+  // and lift the computed {han, fu, yakuman} up so the wizard can capture it.
+  fixedSeatWind?: string;
+  fixedRoundWind?: string;
+  onResult?: (r: { han: number; fu: number; yakuman: number } | null) => void;
 }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [winTile, setWinTile] = useState<string | null>(null);
-  const [seatWind, setSeatWind] = useState("EW");
-  const [roundWind, setRoundWind] = useState("EW");
+  const [seatWindState, setSeatWind] = useState("EW");
+  const [roundWindState, setRoundWind] = useState("EW");
+  const seatWind = fixedSeatWind ?? seatWindState;
+  const roundWind = fixedRoundWind ?? roundWindState;
   const [flags, setFlags] = useState<Set<string>>(new Set());
   const [dora, setDora] = useState(0);
   const [melds, setMelds] = useState<CalledMeld[]>([]);
@@ -187,6 +199,17 @@ export default function TilesMode({
     return analyze(concealed, melds, ctx);
   }, [counts, winTile, seatWind, roundWind, flags, dora, tsumo, players, honba, total, melds, handTarget]);
 
+  // Lift the computed hand value to an embedding parent (the game wizard). `score`
+  // carries the raw han/fu; the game re-derives the payment from its own state.
+  useEffect(() => {
+    if (!onResult) return;
+    if (result && result.ok && result.score) {
+      onResult({ han: result.score.han, fu: result.score.fu, yakuman: result.yakuman?.length ?? 0 });
+    } else {
+      onResult(null);
+    }
+  }, [result, onResult]);
+
   // A builder tile grid cell: highlighted if already in the meld, greyed if not
   // currently pickable.
   const buildCell = (c: string) => {
@@ -199,30 +222,40 @@ export default function TilesMode({
 
   return (
     <div>
-      <h2>Seat wind <small>(East = dealer)</small></h2>
-      <div className="row">
-        {WINDS.map(([v, l]) => (
-          <div key={v} className={"chip" + (seatWind === v ? " selected" : "")} onClick={() => setSeatWind(v)}>{l}</div>
-        ))}
-      </div>
+      {!fixedSeatWind && (
+        <>
+          <h2>Seat wind <small>(East = dealer)</small></h2>
+          <div className="row">
+            {WINDS.map(([v, l]) => (
+              <button type="button" key={v} className={"chip" + (seatWind === v ? " selected" : "")}
+                onClick={() => { haptic("selection"); setSeatWind(v); }}>{l}</button>
+            ))}
+          </div>
+        </>
+      )}
 
-      <h2>Round wind</h2>
-      <div className="row">
-        {WINDS.slice(0, 2).map(([v, l]) => (
-          <div key={v} className={"chip" + (roundWind === v ? " selected" : "")} onClick={() => setRoundWind(v)}>{l}</div>
-        ))}
-      </div>
+      {!fixedRoundWind && (
+        <>
+          <h2>Round wind</h2>
+          <div className="row">
+            {WINDS.slice(0, 2).map(([v, l]) => (
+              <button type="button" key={v} className={"chip" + (roundWind === v ? " selected" : "")}
+                onClick={() => { haptic("selection"); setRoundWind(v); }}>{l}</button>
+            ))}
+          </div>
+        </>
+      )}
 
       <h2>Flags</h2>
       <div className="row">
         {FLAGS.map(([f, l]) => {
           const blocked = hasOpen && (f === "riichi" || f === "double_riichi" || f === "ippatsu");
           return (
-            <div key={f}
-              className={"chip" + (flags.has(f) ? " on" : "") + (blocked ? " tile-dim" : "")}
-              onClick={() => !blocked && toggleFlag(f)}>
+            <button type="button" key={f}
+              className={"chip" + (flags.has(f) ? " selected" : "")} disabled={blocked}
+              onClick={() => { haptic("selection"); toggleFlag(f); }}>
               {l}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -240,20 +273,20 @@ export default function TilesMode({
                 <div key={j} className="tile-btn tile-pic sm"><TileImg code={c} /></div>
               ))}
               <span className="meld-label">{meldLabel(m)}</span>
-              <button className="link-btn" style={{ marginTop: 0, marginLeft: 2, fontSize: "0.8rem" }}
+              <button className="link-btn inline" style={{ marginLeft: 2 }}
                 onClick={() => removeMeld(i)}>✕</button>
             </div>
           ))}
         </div>
       ) : (
-        <p style={{ fontSize: "0.82rem", opacity: 0.6, marginTop: 0 }}>No called sets yet.</p>
+        <p className="hint">No called sets yet.</p>
       )}
 
       {bld ? (
         /* ── Meld builder ── */
         <div className="meld-builder">
           <div className="meld-builder-preview">
-            <span style={{ fontSize: "0.82rem", color: "var(--hint)" }}>
+            <span className="meta">
               {bld.type} ({bld.codes.length}/{targetOf(bld.type)})
             </span>
             {bld.codes.length > 0 && (
@@ -275,32 +308,32 @@ export default function TilesMode({
           </div>
           <div className="row" style={{ gap: 7, flexWrap: "wrap" }}>
             {bld.codes.length > 0 && (
-              <div className="chip" onClick={() => setBld(b => b ? { ...b, codes: [] } : null)}>Clear</div>
+              <button type="button" className="chip" onClick={() => { haptic("selection"); setBld(b => b ? { ...b, codes: [] } : null); }}>Clear</button>
             )}
             {/* Chi is always an open call; pon/kong can be concealed. */}
             {bld.type !== "chi" && (
               <>
-                <div className={"chip" + (bld.open ? " selected" : "")}
-                  onClick={() => setBld(b => b ? { ...b, open: true } : null)}>Open</div>
-                <div className={"chip" + (!bld.open ? " selected" : "")}
-                  onClick={() => setBld(b => b ? { ...b, open: false } : null)}>Closed</div>
+                <button type="button" className={"chip" + (bld.open ? " selected" : "")}
+                  onClick={() => { haptic("selection"); setBld(b => b ? { ...b, open: true } : null); }}>Open</button>
+                <button type="button" className={"chip" + (!bld.open ? " selected" : "")}
+                  onClick={() => { haptic("selection"); setBld(b => b ? { ...b, open: false } : null); }}>Closed</button>
               </>
             )}
-            <div className={"chip" + (bldComplete ? " on" : " tile-dim")}
-              onClick={() => bldComplete && confirmMeld()}>Add set</div>
-            <div className="chip" onClick={() => setBld(null)}>Cancel</div>
+            <button type="button" className="chip" disabled={!bldComplete}
+              onClick={() => { haptic("selection"); confirmMeld(); }}>Add set</button>
+            <button type="button" className="chip" onClick={() => { haptic("selection"); setBld(null); }}>Cancel</button>
           </div>
         </div>
       ) : melds.length < 4 ? (
         <div className="row" style={{ marginBottom: 4 }}>
-          <div className="chip" onClick={() => startBuild("chi")}>+ chi</div>
-          <div className="chip" onClick={() => startBuild("pon")}>+ pon</div>
-          <div className="chip" onClick={() => startBuild("kong")}>+ kong</div>
+          <button type="button" className="chip" onClick={() => { haptic("selection"); startBuild("chi"); }}>+ Chi</button>
+          <button type="button" className="chip" onClick={() => { haptic("selection"); startBuild("pon"); }}>+ Pon</button>
+          <button type="button" className="chip" onClick={() => { haptic("selection"); startBuild("kong"); }}>+ Kong</button>
         </div>
       ) : null}
 
       {/* ── Your concealed hand (selected tiles), wraps if long ── */}
-      <h2>Your hand ({total} / {handTarget}) <small>tap to remove</small></h2>
+      <h2>Your hand ({total}/{handTarget}) <small>tap to remove</small></h2>
       {total > 0 ? (
         <div className="row" style={{ gap: 4 }}>
           {Object.entries(counts).flatMap(([c, n]) =>
@@ -312,7 +345,7 @@ export default function TilesMode({
           )}
         </div>
       ) : (
-        <p style={{ fontSize: "0.82rem", opacity: 0.6, marginTop: 0 }}>No tiles yet — add them below.</p>
+        <p className="hint">No tiles yet — add them below.</p>
       )}
 
       {/* ── Tile picker: tap to add to your hand ── */}

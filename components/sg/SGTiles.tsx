@@ -52,7 +52,7 @@ export function SGTiles({ onBack }: { onBack: () => void }) {
   return (
     <div>
       <h1>Tai calculator <small>build a hand</small></h1>
-      <p style={{ fontSize: "0.82rem", opacity: 0.75, marginTop: 0 }}>
+      <p className="hint">
         Tap tiles to build a hand. Automatic tai (doubles) scoring is coming — for now this is the tile picker.
       </p>
 
@@ -80,7 +80,7 @@ export function SGTiles({ onBack }: { onBack: () => void }) {
 
       {total > 0 && (
         <>
-          <h2>Your hand ({total}) — tap to remove</h2>
+          <h2>Your hand ({total}) <small>tap to remove</small></h2>
           <div className="tiles-grid">
             {rack.map((k) => {
               const c = k.split("#")[0];
@@ -96,9 +96,9 @@ export function SGTiles({ onBack }: { onBack: () => void }) {
         </>
       )}
 
-      <div className="result" style={{ marginTop: 18 }}>
+      <div className="result">
         <div className="line"><strong>Tai: —</strong></div>
-        <div className="line" style={{ opacity: 0.7, fontSize: "0.85rem" }}>
+        <div className="line meta">
           Scoring isn&apos;t wired up yet. Once you give me the tai for each hand type, this will work it out automatically.
         </div>
       </div>

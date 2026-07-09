@@ -32,7 +32,7 @@ export function Settings({
     const nm = name.trim();
     setNameMsg("");
     if (nm === profile.username) { setNameErr(""); return; }
-    if (!validDisplayName(nm)) { setNameErr(NAME_HINT); return; }
+    if (!validDisplayName(nm)) { setNameErr(NAME_HINT); haptic("error"); return; }
     setSavingName(true); setNameErr("");
     try {
       const { profile: p } = await setDisplayName(nm);
@@ -44,7 +44,7 @@ export function Settings({
 
   const saveTypes = async () => {
     setTypesMsg("");
-    if (!types.length) { setTypesErr("Pick at least one."); return; }
+    if (!types.length) { setTypesErr("Pick at least one."); haptic("error"); return; }
     setSavingTypes(true); setTypesErr("");
     try {
       const { gameTypes } = await setPrefs(types);
@@ -59,19 +59,19 @@ export function Settings({
       <h1>Settings</h1>
 
       <h2>Display name</h2>
-      <p style={{ opacity: 0.7, fontSize: "0.82rem", marginTop: 0 }}>
+      <p className="hint">
         How you show up across the app. Typing a custom one stops it mirroring your Telegram name. Doesn&apos;t have to be unique.
       </p>
       <input className="text-input" value={name} maxLength={NAME_MAX}
         onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveName(); }} />
       <div className="row">
         <button className="chip" disabled={savingName} onClick={saveName}>{savingName ? "Saving…" : "Save name"}</button>
-        {nameMsg && <span style={{ fontSize: "0.85rem", opacity: 0.7, alignSelf: "center" }}>{nameMsg}</span>}
+        {nameMsg && <span className="hint" style={{ margin: 0, alignSelf: "center" }}>{nameMsg}</span>}
       </div>
       {nameErr && <p className="err">{nameErr}</p>}
 
       <h2>Mahjong types</h2>
-      <p style={{ opacity: 0.7, fontSize: "0.82rem", marginTop: 0 }}>
+      <p className="hint">
         What the home screen offers you.
       </p>
       <GameTypeChecklist value={types} onChange={setTypes} />
@@ -79,12 +79,12 @@ export function Settings({
         <button className="chip" disabled={savingTypes || !types.length} onClick={saveTypes}>
           {savingTypes ? "Saving…" : "Save types"}
         </button>
-        {typesMsg && <span style={{ fontSize: "0.85rem", opacity: 0.7, alignSelf: "center" }}>{typesMsg}</span>}
+        {typesMsg && <span className="hint" style={{ margin: 0, alignSelf: "center" }}>{typesMsg}</span>}
       </div>
       {typesErr && <p className="err">{typesErr}</p>}
 
       <h2>Payout presets</h2>
-      <p style={{ opacity: 0.7, fontSize: "0.82rem", marginTop: 0 }}>
+      <p className="hint">
         {profile.presets?.length
           ? `You have ${profile.presets.length} saved: ${profile.presets.map((p) => p.name).join(", ")}.`
           : "None saved yet."}

@@ -100,7 +100,7 @@ export function PayoutEditor({
 
   return (
     <div>
-      <p style={{ fontSize: "0.8rem", opacity: 0.7, marginTop: -4 }}>
+      <p className="hint">
         Pick a scheme to fill the table, then edit any amount. Whatever the table shows is exactly what gets charged.
       </p>
       <label className="vlabel" style={{ marginBottom: 8 }}>Payout scheme
@@ -126,9 +126,10 @@ export function PayoutEditor({
           <span className="unit">per pax</span></label>
       </div>
       <div className="row" style={{ alignItems: "center", gap: 6, marginTop: 4, marginBottom: 4 }}>
-        <span style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>Self-draw bonus · frequently used</span>
+        <span className="meta">Self-draw bonus · frequently used</span>
         {[2, 3, 5].map((v) => (
-          <div key={v} className="chip" onClick={() => { setZbonus(money(v)); setScheme(CUSTOM); }}>{`$${v}`}</div>
+          <button type="button" key={v} className="chip"
+            onClick={() => { haptic("selection"); setZbonus(money(v)); setScheme(CUSTOM); }}>{money(v)}</button>
         ))}
       </div>
 
@@ -150,13 +151,13 @@ export function PayoutEditor({
         ))}
       </div>
       <div className="row" style={{ alignItems: "center", gap: 8, marginTop: 6 }}>
-        <span style={{ fontSize: "0.8rem", opacity: 0.7 }}>Max tai</span>
+        <span className="meta">Max tai</span>
         <button type="button" className="chip" onClick={() => setMaxTai(mt - 1)} disabled={mt <= 1}>−</button>
         <span style={{ minWidth: 20, textAlign: "center" }}>{mt}</span>
         <button type="button" className="chip" onClick={() => setMaxTai(mt + 1)} disabled={mt >= MAXTAI_CAP}>+</button>
       </div>
 
-      <p style={{ fontSize: "0.78rem", opacity: 0.6 }}>
+      <p className="fine">
         Zimo is what EACH other player pays on a self-draw (plus the self-draw bonus, if set); Shoot is what
         the single discarder pays. Bite &amp; gang are a flat amount each other player pays.
       </p>

@@ -49,7 +49,7 @@ export function GameTypesGate({ onDone }: { onDone: (types: GameType[]) => void 
   return (
     <div>
       <h1>What do you play?</h1>
-      <p style={{ opacity: 0.8, fontSize: "0.9rem" }}>
+      <p className="hint">
         Pick everything you&apos;ll use this app for — it decides which tabs you see. You can change this any time in Settings.
       </p>
       <GameTypeChecklist value={picked} onChange={setPicked} />
@@ -78,16 +78,16 @@ export function UsernameGate({ suggested, onDone }: { suggested: string; hasHand
   return (
     <div>
       <h1>Your display name</h1>
-      <p style={{ opacity: 0.8, fontSize: "0.9rem" }}>
+      <p className="hint">
         This is how you show up across the app. We filled in your Telegram name — keep it (it&apos;ll update if you rename on Telegram) or type your own.
       </p>
-      <input className="text-input" autoFocus value={name} maxLength={NAME_MAX} placeholder="your name"
+      <input className="text-input" autoFocus value={name} maxLength={NAME_MAX} placeholder="e.g. Ah Seng"
         onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
       <button className="primary-btn" disabled={!valid || saving} onClick={submit}>
         {saving ? "Saving…" : "Continue"}
       </button>
       {err && <p className="err">{err}</p>}
-      <p style={{ opacity: 0.55, fontSize: "0.78rem" }}>{NAME_HINT} Doesn&apos;t have to be unique.</p>
+      <p className="fine">{NAME_HINT} Doesn&apos;t have to be unique.</p>
     </div>
   );
 }

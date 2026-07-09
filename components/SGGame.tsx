@@ -5,7 +5,8 @@
 // game-types gate -> launch), the home screen, and which screen is showing.
 
 import { useEffect, useRef, useState } from "react";
-import { haptic } from "@/lib/telegram";
+import { haptic, useBackButton } from "@/lib/telegram";
+import { money } from "@/lib/sg/payout";
 import { UsernameGate, GameTypesGate } from "@/components/sg/Identity";
 import { JoinForm } from "@/components/sg/Join";
 import { Setup } from "@/components/sg/Setup";
@@ -47,6 +48,19 @@ type Screen =
   | { t: "play"; state: TrackerState };        // the live session
 
 const sumOf = (s: TrackerState): GroupSummary => ({ code: s.tracker.code, name: s.tracker.name, players: s.tracker.players.length });
+
+// Settings placeholder for a non-Telegram launch. A component (not inline JSX)
+// so it can register the native back button like every other sub-screen.
+function SettingsFallback({ onBack }: { onBack: () => void }) {
+  useBackButton(onBack);
+  return (
+    <div>
+      <h1>Settings</h1>
+      <p className="err">Open this inside Telegram to manage your profile.</p>
+      <button className="link-btn" onClick={onBack}>← Back</button>
+    </div>
+  );
+}
 
 // Manual home ordering (the default is recent-activity from the server; a tap
 // on the up-arrow pins your own order). Per Telegram account, on-device.
@@ -322,8 +336,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
     case "settings":
       return profile
         ? <Settings profile={profile} onProfile={setProfile} onBack={goHome} />
-        : <div><h1>Settings</h1><p className="err">Open this inside Telegram to manage your profile.</p>
-            <button className="link-btn" onClick={goHome}>← Back</button></div>;
+        : <SettingsFallback onBack={goHome} />;
 
     case "tiles":
       return <SGTiles onBack={goHome} />;
@@ -335,9 +348,9 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
         <div>
           <h1>Mahjong</h1>
           {profile ? (
-            <p style={{ opacity: 0.75, fontSize: "0.85rem", marginTop: 0 }}>
+            <p className="hint">
               Welcome back, <strong>{profile.username}</strong>{" · "}
-              <button className="link-btn" style={{ padding: 0, fontSize: "inherit", verticalAlign: "baseline" }}
+              <button className="link-btn inline"
                 onClick={() => setScreen({ t: "settings" })}>Settings</button>
             </p>
           ) : null}
@@ -363,29 +376,29 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
               <div className="choice-btn" onClick={onOpenRiichi}>Riichi calculator<small>score a hand</small></div>
             </div>
           ) : shownTab === "my3" ? (
-            <p style={{ opacity: 0.7, fontSize: "0.9rem" }}>
+            <p className="hint">
               Malaysian 3-player is coming soon — its groups and sessions will live here. (WIP)
             </p>
           ) : (
             <>
               <h2>Your groups</h2>
               {active.length === 0 ? (
-                <p style={{ opacity: 0.7, fontSize: "0.9rem" }}>You haven&apos;t joined any groups yet.</p>
+                <p className="hint">You haven&apos;t joined any groups yet.</p>
               ) : (
                 <>
                 <div className="balances">
                   {active.map((g, i) => (
                     <div key={g.code} className="bal-row" style={{ cursor: canSync ? "pointer" : "default", alignItems: "center" }}
-                      onClick={() => canSync && openByCode(g.code)}>
+                      onClick={() => canSync && !busy && openByCode(g.code)}>
                       <span>
                         {g.name || g.code}
-                        {g.hasActive && <span style={{ color: "var(--button)", fontSize: "0.75rem" }}> · session on</span>}
-                        <span style={{ opacity: 0.5, fontSize: "0.75rem" }}> · {g.code}</span>
+                        {g.hasActive && <span className="meta" style={{ color: "var(--button)" }}> · session on</span>}
+                        <span className="meta"> · {g.code}</span>
                       </span>
                       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         {typeof g.myNet === "number" && (
                           <span className={"bal " + (g.myNet >= 0 ? "pos" : "neg")} style={{ fontSize: "0.85rem" }}>
-                            {g.myNet >= 0 ? "+" : ""}{g.myNet.toFixed(2)}
+                            {g.myNet >= 0 ? "+" : ""}{money(g.myNet)}
                           </span>
                         )}
                         {i > 0 && (
@@ -396,7 +409,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
                     </div>
                   ))}
                 </div>
-                <p style={{ opacity: 0.55, fontSize: "0.75rem", marginTop: 4 }}>
+                <p className="fine">
                   Ordered by recent activity — use ↑ to pin your own order. Tap a group to enter it and start a session.
                 </p>
                 </>
@@ -405,12 +418,12 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
               {chatGroups.length > 0 && (
                 <>
                   <h2 style={{ marginBottom: 2 }}>In this chat</h2>
-                  <p style={{ opacity: 0.6, fontSize: "0.78rem", marginTop: 0 }}>Tap to join — it&apos;ll be added to your groups.</p>
+                  <p className="fine" style={{ marginTop: 0 }}>Tap to join — it&apos;ll be added to your groups.</p>
                   <div className="balances">
                     {chatGroups.map((g) => (
-                      <div key={g.code} className="bal-row" style={{ cursor: canSync ? "pointer" : "default" }} onClick={() => canSync && openByCode(g.code)}>
+                      <div key={g.code} className="bal-row" style={{ cursor: canSync ? "pointer" : "default" }} onClick={() => canSync && !busy && openByCode(g.code)}>
                         <span>{g.name || g.code}</span>
-                        <span style={{ opacity: 0.55, fontSize: "0.8rem" }}>{g.code}{g.players ? ` · ${g.players}p` : ""}</span>
+                        <span className="meta">{g.code}{g.players ? ` · ${g.players} players` : ""}</span>
                       </div>
                     ))}
                   </div>
@@ -418,10 +431,10 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
               )}
 
               <div className="choices" style={{ marginTop: 14 }}>
-                <div className="choice-btn" onClick={() => canSync && setScreen({ t: "create" })}
-                  style={canSync ? undefined : { opacity: 0.5, cursor: "not-allowed" }}>Create a new group<small>just a share link</small></div>
-                <div className="choice-btn" onClick={() => canSync && setScreen({ t: "join" })}
-                  style={canSync ? undefined : { opacity: 0.5, cursor: "not-allowed" }}>Join with a code<small>enter a shared code</small></div>
+                <div className={"choice-btn" + (canSync ? "" : " locked")} onClick={() => canSync && setScreen({ t: "create" })}>
+                  Create a new group<small>just a share link</small></div>
+                <div className={"choice-btn" + (canSync ? "" : " locked")} onClick={() => canSync && setScreen({ t: "join" })}>
+                  Join with a code<small>enter a shared code</small></div>
               </div>
             </>
           )}
@@ -433,7 +446,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
           )}
 
           {!types.includes("riichi") || types.length === 1 ? (
-            <button className="link-btn" onClick={onOpenRiichi}>Riichi hand calculator →</button>
+            <button className="link-btn" onClick={onOpenRiichi}>Riichi calculator →</button>
           ) : null}
         </div>
       );

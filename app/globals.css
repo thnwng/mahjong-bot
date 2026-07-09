@@ -51,6 +51,14 @@ h2 {
   letter-spacing: var(--tracking-widest);
 }
 
+/* Heading annotation (counts, "tap to remove" hints): keep it sentence case
+   even inside the uppercase eyebrow. */
+h2 small {
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-sans);
+}
+
 small {
   color: var(--text-muted);
   font-weight: var(--weight-regular);
@@ -76,6 +84,7 @@ a {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   padding: 8px 13px;
+  font-family: var(--font-sans); /* buttons don't inherit the body font */
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   background: var(--surface);
@@ -151,6 +160,13 @@ a {
   color: color-mix(in srgb, var(--accent-fg) 78%, transparent);
 }
 
+/* Anything that can't be interacted with right now (locked wizard section,
+   full table, sync unavailable). One treatment app-wide. */
+.locked {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 /* Primary action button, fixed to the bottom (padded above the home indicator) */
 .primary-btn {
   position: fixed;
@@ -189,6 +205,18 @@ a {
   cursor: pointer;
   padding: 0;
   margin-top: 14px;
+}
+
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A link-btn used mid-sentence: inherits the line's size and baseline. */
+.link-btn.inline {
+  margin-top: 0;
+  font-size: inherit;
+  vertical-align: baseline;
 }
 
 /* Text inputs + selects — Halcyon input. */
@@ -291,6 +319,29 @@ select.text-input {
   font-size: var(--text-sm);
   color: var(--text-muted);
   line-height: var(--leading-relaxed);
+}
+
+/* Secondary-text roles — use these instead of ad-hoc inline font-size/opacity.
+   Dim via COLOR TOKENS (not opacity) so greys stay consistent in both themes. */
+.hint {
+  /* explanatory paragraph under a heading / empty-state line */
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+.fine {
+  /* footnote-grade caption */
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  margin: 4px 0 10px;
+}
+
+.meta {
+  /* dimmed inline annotation inside a row, card line, or heading */
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  font-weight: var(--weight-regular);
 }
 
 /* Tile picker */
@@ -695,6 +746,12 @@ select.text-input {
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
+}
+
+/* A result card used as an in-content banner (share card, session box,
+   confirm screens) rather than at the bottom of a form. */
+.result.banner {
+  margin: 0 0 14px;
 }
 
 .result .total {

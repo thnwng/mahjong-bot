@@ -25,20 +25,37 @@ function Chips<T extends string | number>({
   return (
     <div className="row">
       {options.map((o) => (
-        <div key={String(o.v)} className={"chip" + (value === o.v ? " selected" : "")} onClick={() => { haptic("selection"); onChange(o.v); }}>
+        <button type="button" key={String(o.v)} className={"chip" + (value === o.v ? " selected" : "")} onClick={() => { haptic("selection"); onChange(o.v); }}>
           {o.label}
-        </div>
+        </button>
       ))}
     </div>
   );
 }
 
-export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
+export type PickResult = { han: number; fu: number; yakuman: number };
+// When embedded in the game's record-hand wizard, the win type / players / honba
+// / seat & round wind are all known from game state, so they're supplied (and
+// their pickers hidden); the picked {han, fu, yakuman} is returned via onPick.
+export interface CalcEmbed {
+  onPick: (r: PickResult) => void;
+  tsumo: boolean;
+  players: 3 | 4;
+  honba: number;
+  seatWind: string;
+  roundWind: string;
+}
+
+export default function RiichiCalculator({ onBack, embed }: { onBack: () => void; embed?: CalcEmbed }) {
   useBackButton(onBack);
   const [mode, setMode] = useState<Mode>("tiles");
-  const [tsumo, setTsumo] = useState(false);
-  const [players, setPlayers] = useState<3 | 4>(4);
-  const [honba, setHonba] = useState(0);
+  const [tsumoState, setTsumo] = useState(false);
+  const [playersState, setPlayers] = useState<3 | 4>(4);
+  const [honbaState, setHonba] = useState(0);
+  const tsumo = embed ? embed.tsumo : tsumoState;
+  const players = embed ? embed.players : playersState;
+  const honba = embed ? embed.honba : honbaState;
+  const [tilesResult, setTilesResult] = useState<PickResult | null>(null);
 
   // manual / yaku state
   const [dealer, setDealer] = useState(false);
@@ -77,54 +94,71 @@ export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
   const hanForFu = mode === "manual" ? (hanInput ?? 0) + dora : totalHan([...picked], closed, dora);
   const showFu = mode !== "tiles" && hanForFu < 5;
 
+  // The hand value to hand back to an embedding wizard: tiles mode lifts it via
+  // onResult; manual/yaku read it off the computed score (yakuman via 13+ han).
+  const pick: PickResult | null =
+    mode === "tiles"
+      ? tilesResult
+      : result && !("error" in result) ? { han: result.score.han, fu: result.score.fu, yakuman: 0 } : null;
+
   return (
     <div>
       <h1>Riichi calculator</h1>
 
       <div className="row" style={{ marginBottom: 8 }}>
         {(["tiles", "manual", "yaku"] as Mode[]).map((m) => (
-          <div key={m} className={"chip" + (mode === m ? " selected" : "")} onClick={() => { haptic("selection"); setMode(m); }}>
+          <button type="button" key={m} className={"chip" + (mode === m ? " selected" : "")} onClick={() => { haptic("selection"); setMode(m); }}>
             {m === "tiles" ? "Pick tiles" : m === "manual" ? "Han + Fu" : "Pick yaku"}
-          </div>
+          </button>
         ))}
       </div>
 
-      <h2>Win type</h2>
-      <Chips
-        options={[
-          { v: "ron", label: "Ron" },
-          { v: "tsumo", label: "Tsumo" },
-        ]}
-        value={tsumo ? "tsumo" : "ron"}
-        onChange={(v) => setTsumo(v === "tsumo")}
-      />
-
-      <h2>Players</h2>
-      <Chips
-        options={[
-          { v: 4, label: "4 (yonma)" },
-          { v: 3, label: "3 (sanma)" },
-        ]}
-        value={players}
-        onChange={(v) => setPlayers(v as 3 | 4)}
-      />
-
-      <h2>Honba</h2>
-      <NumberPicker value={honba} onChange={setHonba} max={10} />
-
-      {mode === "tiles" ? (
-        <TilesMode tsumo={tsumo} players={players} honba={honba} />
-      ) : (
+      {!embed && (
         <>
-          <h2>Seat</h2>
+          <h2>Win type</h2>
           <Chips
             options={[
-              { v: "nondealer", label: "Non-dealer" },
-              { v: "dealer", label: "Dealer" },
+              { v: "ron", label: "Ron" },
+              { v: "tsumo", label: "Tsumo" },
             ]}
-            value={dealer ? "dealer" : "nondealer"}
-            onChange={(v) => setDealer(v === "dealer")}
+            value={tsumo ? "tsumo" : "ron"}
+            onChange={(v) => setTsumo(v === "tsumo")}
           />
+
+          <h2>Players</h2>
+          <Chips
+            options={[
+              { v: 4, label: "4 (yonma)" },
+              { v: 3, label: "3 (sanma)" },
+            ]}
+            value={players}
+            onChange={(v) => setPlayers(v as 3 | 4)}
+          />
+
+          <h2>Honba</h2>
+          <NumberPicker value={honba} onChange={setHonba} max={10} />
+        </>
+      )}
+
+      {mode === "tiles" ? (
+        <TilesMode tsumo={tsumo} players={players} honba={honba}
+          fixedSeatWind={embed?.seatWind} fixedRoundWind={embed?.roundWind}
+          onResult={embed ? setTilesResult : undefined} />
+      ) : (
+        <>
+          {!embed && (
+            <>
+              <h2>Seat</h2>
+              <Chips
+                options={[
+                  { v: "nondealer", label: "Non-dealer" },
+                  { v: "dealer", label: "Dealer" },
+                ]}
+                value={dealer ? "dealer" : "nondealer"}
+                onChange={(v) => setDealer(v === "dealer")}
+              />
+            </>
+          )}
 
           {mode === "manual" ? (
             <>
@@ -165,13 +199,23 @@ export default function RiichiCalculator({ onBack }: { onBack: () => void }) {
           <h2>Dora (incl. aka / ura)</h2>
           <NumberPicker value={dora} onChange={setDora} max={20} />
 
-          {result && ("error" in result ? <ResultCard error={result.error} /> : <ResultCard score={result.score} />)}
+          {!embed && result && ("error" in result ? <ResultCard error={result.error} /> : <ResultCard score={result.score} />)}
         </>
       )}
 
-      <button className="link-btn" onClick={onBack}>
-        ← Back to menu
-      </button>
+      {embed ? (
+        <>
+          <button className="primary-btn" style={{ marginTop: 12 }} disabled={!pick}
+            onClick={() => pick && embed.onPick(pick)}>
+            {pick
+              ? `Use this hand · ${pick.yakuman ? pick.yakuman + "× yakuman" : pick.han + " han" + (pick.han < 5 ? " / " + pick.fu + " fu" : "")}`
+              : "Build a valid hand first"}
+          </button>
+          <button className="link-btn" onClick={onBack}>← Cancel</button>
+        </>
+      ) : (
+        <button className="link-btn" onClick={onBack}>← Back</button>
+      )}
     </div>
   );
 }

@@ -28,6 +28,19 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |
 | `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement); apply new ones in the SQL editor BEFORE the matching function deploys |
 
+## Branch topology (as of 2026-07-09 — mirrors the Clabbers rule)
+
+- **`main` = the DEPLOYED app.** Any push to `main` triggers BOTH deploy
+  workflows: the Pages site and the Supabase Edge Functions (the real-money
+  backend). Pushing `main` is the deploy button, not a code drop.
+- **`develop` = the integration trunk.** All day-to-day work lands here.
+  **When the owner says "commit and push", that means `develop` — NEVER
+  `main` unless he explicitly says so.** Pushing `develop` deploys nothing
+  (both workflows trigger on `main` only).
+- **Promotion `develop` → `main` is a deliberate, owner-approved act** (merge
+  develop into main, push). For coordinated changes the deploy order below
+  still applies — apply schema migrations BEFORE promoting.
+
 ## How each layer deploys
 
 - **Front-end**: push to `main` → `.github/workflows/deploy.yml` → engine tests →

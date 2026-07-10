@@ -154,6 +154,39 @@ export function haptic(kind: Haptic): void {
   }
 }
 
+// Copy text (an invite link) to the clipboard. Returns whether it succeeded.
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to the legacy path */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// Open Telegram's "forward to a chat" sheet with a message + link. Outside
+// Telegram (dev browser) it just opens the share URL in a new tab.
+export function shareToChat(url: string, text: string): void {
+  const share = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  const wa = webApp() as unknown as { openTelegramLink?: (u: string) => void } | undefined;
+  if (wa?.openTelegramLink) {
+    try { wa.openTelegramLink(share); return; } catch { /* fall through */ }
+  }
+  try { window.open(share, "_blank"); } catch { /* ignore */ }
+}
+
 // ---------------------------------------------------------------- back button
 //
 // Telegram gives one native back button in the header. The app has several

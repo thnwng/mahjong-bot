@@ -1,29 +1,46 @@
 "use client";
 
-// Two screens for a group:
-//  - GroupScreen: the group's share link, its ROSTER of names (add placeholders,
-//    claim a seat = "join as this name"), the debt counter, and the entry point
-//    to start a session.
-//  - NewSession: one page that walks type -> who's playing (a subset of the
-//    roster) -> payouts, with later sections greyed until the earlier one's done.
+// The group screen: header (name + rename pencil + settings gear), an invite box,
+// the players roster (claim / remove / add), then a tabbed subsection —
+// Sessions (history + start/enter/delete) and $ (debts, who-owes-who, all-time).
+// NewSession = one page: type -> who's playing -> optional name -> payouts.
 
 import { useMemo, useState } from "react";
-import { haptic, useBackButton } from "@/lib/telegram";
+import { haptic, useBackButton, copyToClipboard, shareToChat } from "@/lib/telegram";
 import { PayoutConfig, money } from "@/lib/sg/payout";
 import { PayoutEditor } from "./PayoutEditor";
 import {
   TrackerState,
   PayoutPreset,
+  SessionSummary,
   GAME_TYPES,
   addName,
   claimSeat,
   joinNew,
   settleDebt,
+  renameGroup,
+  removePlayer,
+  deleteSession,
+  sendInviteToChat,
   BOT_APP_LINK,
 } from "@/lib/sg/remote";
 
 const seatsFor = (mahjongType: string) => (mahjongType === "my3" ? 3 : 4);
 const typeLabel = (v: string) => GAME_TYPES.find((g) => g.v === v)?.label || v;
+const ROSTER_MAX = 12;
+
+// ── tiny inline icons (no emoji) ────────────────────────────────────
+const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+const IconX = () => <svg width="14" height="14" viewBox="0 0 24 24" {...stroke} aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>;
+const IconPencil = () => <svg width="14" height="14" viewBox="0 0 24 24" {...stroke} aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>;
+const IconTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" {...stroke} aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6" /></svg>;
+const IconCopy = () => <svg width="14" height="14" viewBox="0 0 24 24" {...stroke} aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
+const IconGear = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
 
 // Greedy "who pays who" suggestion from net balances: biggest debtor pays
 // biggest creditor until everyone is square. Not unique, but minimal-ish.
@@ -46,6 +63,9 @@ export function settleUp(net: Record<string, number>): { from: string; to: strin
 const hoursLeft = (startedAt: string) => {
   const ms = new Date(startedAt).getTime() + 24 * 3600 * 1000 - Date.now();
   return Math.max(0, Math.round(ms / 3600000));
+};
+const sessDate = (iso: string) => {
+  try { return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" }); } catch { return ""; }
 };
 
 export function GroupScreen({
@@ -74,34 +94,70 @@ export function GroupScreen({
   const me = state.me || null;
   const shareLink = `${BOT_APP_LINK}?startapp=${t.code}`;
 
+  const [tab, setTab] = useState<"history" | "money">("history");
   const [work, setWork] = useState(false);
   const [gErr, setGErr] = useState("");
-  const [newName, setNewName] = useState("");
-  const [mine, setMine] = useState(false); // "the name I'm adding is me" (join + claim)
+  const [addFields, setAddFields] = useState<string[]>([""]);
+  const [mine, setMine] = useState(false); // "the first name I'm adding is me" (join + claim)
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState(t.name || "");
+  const [copied, setCopied] = useState(false);
+  const [confirmDelSess, setConfirmDelSess] = useState<string | null>(null);
 
   const run = async (fn: () => Promise<TrackerState>) => {
     setWork(true); setGErr("");
-    try { onState(await fn()); haptic("success"); }
-    catch (e) { haptic("error"); setGErr(String((e as Error).message || e)); }
+    try { onState(await fn()); haptic("success"); return true; }
+    catch (e) { haptic("error"); setGErr(String((e as Error).message || e)); return false; }
     finally { setWork(false); }
   };
-  const addPlayer = () => {
-    const n = newName.trim();
-    if (!n) return;
-    setNewName("");
-    const code = t.code;
-    run(() => (mine && !me ? joinNew(code, n) : addName(code, n)));
-    setMine(false);
-  };
   const claim = (name: string) => run(() => claimSeat(t.code, name));
+
+  // Add-name fields auto-grow: typing in the last one spawns another empty field.
+  const setAddField = (i: number, v: string) => setAddFields((prev) => {
+    const next = [...prev]; next[i] = v;
+    if (i === next.length - 1 && v.trim() && next.length < ROSTER_MAX - roster.length) next.push("");
+    return next;
+  });
+  const commitAdds = async () => {
+    const names = [...new Set(addFields.map((s) => s.trim()).filter(Boolean))]; // dedupe within the batch
+    if (!names.length) return;
+    let ok = true;
+    for (let i = 0; i < names.length && ok; i++) {
+      const n = names[i];
+      const inRoster = roster.includes(n);
+      if (i === 0 && mine && !me) {
+        // "first name is me": claim it if the seat already exists, else join as new.
+        ok = await run(() => (inRoster ? claimSeat(t.code, n) : joinNew(t.code, n)));
+      } else if (!inRoster) {
+        ok = await run(() => addName(t.code, n));
+      }
+    }
+    if (ok) { setAddFields([""]); setMine(false); }
+  };
+
+  const doRemove = (name: string) => {
+    if (confirmRemove !== name) { setConfirmRemove(name); haptic("warning"); return; }
+    setConfirmRemove(null);
+    run(() => removePlayer(t.code, name));
+  };
+
+  const doRename = async () => {
+    const n = renameVal.trim();
+    if (!n || n === t.name) { setRenaming(false); return; }
+    if (await run(() => renameGroup(t.code, n))) setRenaming(false);
+  };
+
+  const copyLink = async () => {
+    haptic("selection");
+    if (await copyToClipboard(shareLink)) { setCopied(true); setTimeout(() => setCopied(false), 1500); }
+  };
 
   const net = roster.map((p) => ({ p, v: debts[p] || 0 }));
   const anyDebt = net.some((x) => Math.abs(x.v) > 0.004);
   const suggestions = useMemo(() => settleUp(debts), [debts]);
   const enoughToStart = roster.length >= 3;
 
-  // All-time tally: career win/loss per player (union of everyone who's won/lost
-  // money or sat in a finished session), biggest winner first.
   const career = useMemo(() => {
     const at = state.allTime || {};
     const gm = state.games || {};
@@ -112,11 +168,9 @@ export function GroupScreen({
       .sort((a, b) => b.v - a.v);
   }, [state.allTime, state.games]);
   const settlements = state.settlements || [];
+  const sessions = state.sessions || [];
+  const endedSessions = sessions.filter((s) => s.ended_at);
 
-  // Only a party to a debt can settle it (you can settle whether you owe or are
-  // owed). Two-tap confirm — the app's standard for irreversible money actions
-  // (same as end-session in Play; window.confirm is unreliable in Telegram
-  // WebViews). One confirmed tap clears the whole pairwise line from the tally.
   const [confirmSettle, setConfirmSettle] = useState<string | null>(null);
   const doSettle = (from: string, to: string, amount: number) => {
     const key = `${from}>${to}`;
@@ -125,22 +179,57 @@ export function GroupScreen({
     run(() => settleDebt(t.code, from, to, amount));
   };
 
+  const doDeleteSession = (id: string) => {
+    if (confirmDelSess !== id) { setConfirmDelSess(id); haptic("warning"); return; }
+    setConfirmDelSess(null);
+    run(() => deleteSession(t.code, id));
+  };
+
+  const netLine = (n: Record<string, number>) => Object.entries(n)
+    .filter(([, v]) => Math.abs(v) > 0.004)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, v]) => `${name} ${v >= 0 ? "+" : ""}${money(v)}`)
+    .join(" · ");
+
   return (
     <div>
-      <h1>{t.name || t.code}</h1>
-      <div className="result banner">
-        <div className="line"><strong>Code {t.code}</strong>{me ? <> · you are <strong>{me}</strong></> : null}</div>
-        <div className="line meta" style={{ wordBreak: "break-all" }}>{shareLink}</div>
-        <div className="line meta">Share this link (or the code) so others can join.</div>
+      {/* Header: name + rename pencil, settings gear top-right */}
+      <div className="group-head">
+        {renaming ? (
+          <div className="row" style={{ flex: 1, alignItems: "center" }}>
+            <input className="text-input" style={{ marginBottom: 0, flex: 1 }} autoFocus maxLength={40}
+              value={renameVal} onChange={(e) => setRenameVal(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenaming(false); }} />
+            <button className="chip" disabled={work} onClick={doRename}>Save</button>
+            <button className="link-btn inline" onClick={() => { setRenaming(false); setRenameVal(t.name || ""); }}>Cancel</button>
+          </div>
+        ) : (
+          <h1 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            {t.name || t.code}
+            <button className="icon-btn" aria-label="Rename group" onClick={() => { setRenameVal(t.name || ""); setRenaming(true); }}><IconPencil /></button>
+          </h1>
+        )}
+        <button className="icon-btn" aria-label="Group settings" onClick={onOpenSettings}><IconGear /></button>
       </div>
 
-      <button className="link-btn" style={{ marginTop: 0 }} onClick={onOpenSettings}>Group settings (scoring) →</button>
+      {/* Invite box (above players) */}
+      <div className="result banner">
+        <div className="line"><strong>Code {t.code}</strong>{me ? <> · you are <strong>{me}</strong></> : null}</div>
+        <div className="invite-row">
+          <span className="invite-link">{shareLink}</span>
+          <button className="icon-btn" aria-label="Copy invite link" onClick={copyLink}><IconCopy /></button>
+        </div>
+        <div className="row" style={{ marginTop: 4 }}>
+          <button className="chip" disabled={work || busy} onClick={() => run(() => sendInviteToChat(t.code))}>Send to the group</button>
+          <button className="chip" onClick={() => { haptic("selection"); shareToChat(shareLink, `Join "${t.name || "our"}" mahjong group`); }}>Forward to a chat</button>
+        </div>
+        {copied && <div className="line meta">Link copied.</div>}
+      </div>
 
-      {/* Roster: every name in the group. Anyone can add names; if you haven't
-          claimed a seat, tap "This is me" on a name (or add your own). */}
+      {/* Players */}
       <h2>Players <small>({roster.length})</small></h2>
       {roster.length === 0 ? (
-        <p className="hint">No names yet — add everyone who&apos;ll play (you can add placeholders and let people claim them).</p>
+        <p className="hint">No names yet — add everyone who&apos;ll play (placeholders are fine; people can claim them).</p>
       ) : (
         <div className="balances">
           {roster.map((p) => (
@@ -151,136 +240,164 @@ export function GroupScreen({
                   : claimed.has(p) ? <span className="meta"> · joined</span>
                   : <span className="meta"> · open</span>}
               </span>
-              {!me && !claimed.has(p) && (
-                <button className="chip" disabled={work || busy} onClick={() => claim(p)}>This is me</button>
-              )}
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {!me && !claimed.has(p) && (
+                  <button className="chip" disabled={work || busy} onClick={() => claim(p)}>This is me</button>
+                )}
+                <button className="icon-btn danger" aria-label={`Remove ${p}`} disabled={work || busy} onClick={() => doRemove(p)}><IconX /></button>
+              </span>
             </div>
           ))}
         </div>
       )}
+      {confirmRemove && (
+        <p className="warn">
+          Remove <strong>{confirmRemove}</strong>? Settle their money first — you can only remove someone whose
+          balance is zero. Tap the ✕ again to confirm.
+        </p>
+      )}
 
-      <div className="row" style={{ alignItems: "center", gap: 8, marginTop: 8 }}>
-        <input className="text-input" style={{ marginBottom: 0 }} placeholder={mine ? "your name" : "add a name"}
-          maxLength={30} value={newName} onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") addPlayer(); }} />
-        <button className="chip" disabled={work || busy || !newName.trim()} onClick={addPlayer}>
-          {mine && !me ? "Join" : "+ Add"}
-        </button>
-      </div>
-      {!me && (
-        <label className="row" style={{ alignItems: "center", gap: 6, marginTop: 4, fontSize: "0.8rem", opacity: 0.8, cursor: "pointer" }}>
-          <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
-          <span>This name is me (join as it)</span>
-        </label>
+      {/* Add names — fields auto-spawn as you fill them */}
+      {roster.length < ROSTER_MAX && (
+        <div style={{ marginTop: 8 }}>
+          {addFields.map((v, i) => (
+            <input key={i} className="text-input" style={{ marginBottom: 6 }} maxLength={30}
+              placeholder={i === 0 ? (mine && !me ? "your name" : "add a name") : "add a name"}
+              value={v} onChange={(e) => setAddField(i, e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") commitAdds(); }} />
+          ))}
+          <div className="row" style={{ alignItems: "center" }}>
+            <button className="chip" disabled={work || busy || !addFields.some((s) => s.trim())} onClick={commitAdds}>
+              {mine && !me ? "Join / add" : "+ Add"}
+            </button>
+            {!me && (
+              <label className="row" style={{ alignItems: "center", gap: 6, fontSize: "0.8rem", opacity: 0.8, cursor: "pointer" }}>
+                <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
+                <span>first name is me</span>
+              </label>
+            )}
+          </div>
+        </div>
       )}
       {gErr && <p className="err">{gErr}</p>}
 
-      {/* Session */}
-      {session ? (
-        <>
-          <h2>Session running</h2>
-          <div className="result banner">
-            <div className="line">
-              <strong>{typeLabel(session.mahjong_type)}</strong>
-              {session.settle === false ? " · no payouts (ownself settle)" : ""}
-            </div>
-            <div className="line meta">
-              {(session.players || []).join(", ")}
-            </div>
-            <div className="line meta">
-              Started by {session.started_by || "?"} · auto-ends in about {hoursLeft(session.started_at)}h (or end it inside)
-            </div>
-          </div>
-          <button className="primary-btn" disabled={busy} onClick={() => { haptic("light"); onEnterSession(); }}>
-            Enter session
-          </button>
-        </>
-      ) : (
-        <>
-          <h2>No session running</h2>
-          <p className="hint">
-            Start one when you sit down — pick who&apos;s playing and the payouts. It tallies into the debt counter when it ends.
-          </p>
-          <button className="primary-btn" disabled={busy || work || !enoughToStart} onClick={() => { haptic("light"); onNewSession(); }}>
-            Start a session
-          </button>
-          {!enoughToStart && <p className="hint">Add at least 3 names above to start a session.</p>}
-        </>
-      )}
+      <hr className="section-break" />
 
-      <h2>Debt counter</h2>
-      {!anyDebt ? (
-        <p className="hint">All square — nothing outstanding from past sessions.</p>
+      {/* Tabbed subsection: Sessions | $ */}
+      <div className="tabs">
+        <button type="button" className={"tab" + (tab === "history" ? " on" : "")} onClick={() => setTab("history")}>Sessions</button>
+        <button type="button" className={"tab" + (tab === "money" ? " on" : "")} onClick={() => setTab("money")}>$</button>
+      </div>
+
+      {tab === "history" ? (
+        <>
+          {session ? (
+            <div className="result banner">
+              <div className="line">
+                <strong>Running{session.name ? `: ${session.name}` : ""}</strong>
+                {" · "}{typeLabel(session.mahjong_type)}{session.settle === false ? " · no payouts" : ""}
+              </div>
+              <div className="line meta">{(session.players || []).join(", ")}</div>
+              <div className="line meta">Started by {session.started_by || "?"} · auto-ends in ~{hoursLeft(session.started_at)}h</div>
+              <div className="row" style={{ marginTop: 6, alignItems: "center" }}>
+                <button className="chip on" disabled={busy} onClick={() => { haptic("light"); onEnterSession(); }}>Enter session</button>
+                <button className="icon-btn danger" aria-label="Delete running session" disabled={work || busy} onClick={() => doDeleteSession(session.id)}><IconTrash /></button>
+              </div>
+              {confirmDelSess === session.id && <p className="warn">Delete the running session and its money? Tap the trash again to confirm.</p>}
+            </div>
+          ) : (
+            <>
+              <p className="hint">Start one when you sit down — pick who&apos;s playing, name it, set payouts. It tallies into $ when it ends.</p>
+              <button className="chip on" disabled={busy || work || !enoughToStart} onClick={() => { haptic("light"); onNewSession(); }}>Start a session</button>
+              {!enoughToStart && <p className="fine">Add at least 3 names above to start a session.</p>}
+            </>
+          )}
+
+          <h2>Past sessions</h2>
+          {endedSessions.length === 0 ? (
+            <p className="hint">No finished sessions yet.</p>
+          ) : (
+            <div className="balances">
+              {endedSessions.map((s: SessionSummary) => (
+                <div key={s.id} className="bal-row" style={{ alignItems: "flex-start" }}>
+                  <span style={{ flex: 1 }}>
+                    <strong>{s.name || sessDate(s.started_at)}</strong>
+                    <span className="meta"> · {(s.players || []).join(", ")}</span>
+                    {netLine(s.net) && <div className="log" style={{ marginTop: 2 }}>{netLine(s.net)}</div>}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button className="icon-btn danger" aria-label={`Delete session ${s.name || sessDate(s.started_at)}`} disabled={work || busy} onClick={() => doDeleteSession(s.id)}><IconTrash /></button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {confirmDelSess && confirmDelSess !== session?.id && <p className="warn">Delete this session and its money (it&apos;ll rebalance the debts)? Tap the trash again to confirm.</p>}
+        </>
       ) : (
         <>
-          <div className="balances">
-            {net.filter((x) => Math.abs(x.v) > 0.004).map(({ p, v }) => (
-              <div key={p} className="bal-row">
-                <span>{p}</span>
-                <span className={"bal " + (v >= 0 ? "pos" : "neg")}>{v >= 0 ? "+" : ""}{money(v)}</span>
-              </div>
-            ))}
-          </div>
-          {suggestions.length > 0 && (
+          <h2>Debt counter</h2>
+          {!anyDebt ? (
+            <p className="hint">All square — nothing outstanding from past sessions.</p>
+          ) : (
             <>
-              {/* Who owes who: each pairwise payment. If you're a party to a
-                  line, a Settle up button records the repayment and clears it. */}
-              <h2>Who owes who</h2>
               <div className="balances">
-                {suggestions.map((s, i) => {
-                  const mineLine = me != null && (s.from === me || s.to === me);
-                  const arming = confirmSettle === `${s.from}>${s.to}`;
-                  return (
-                    <div key={i} className="bal-row" style={{ alignItems: "center" }}>
-                      <span>{s.from} pays {s.to} <strong>{money(s.amount)}</strong></span>
-                      {mineLine && (
-                        <button className="chip" disabled={work || busy} onClick={() => doSettle(s.from, s.to, s.amount)}>
-                          {arming ? "Tap again to settle" : "Settle up"}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                {net.filter((x) => Math.abs(x.v) > 0.004).map(({ p, v }) => (
+                  <div key={p} className="bal-row">
+                    <span>{p}</span>
+                    <span className={"bal " + (v >= 0 ? "pos" : "neg")}>{v >= 0 ? "+" : ""}{money(v)}</span>
+                  </div>
+                ))}
               </div>
-              {!me && (
-                <p className="fine">
-                  Tap &ldquo;This is me&rdquo; on your name above to settle debts you&apos;re part of.
-                </p>
+              {suggestions.length > 0 && (
+                <>
+                  <h2>Who owes who</h2>
+                  <div className="balances">
+                    {suggestions.map((s, i) => {
+                      const mineLine = me != null && (s.from === me || s.to === me);
+                      const arming = confirmSettle === `${s.from}>${s.to}`;
+                      return (
+                        <div key={i} className="bal-row" style={{ alignItems: "center" }}>
+                          <span>{s.from} pays {s.to} <strong>{money(s.amount)}</strong></span>
+                          {mineLine && (
+                            <button className="chip" disabled={work || busy} onClick={() => doSettle(s.from, s.to, s.amount)}>
+                              {arming ? "Tap again to settle" : "Settle up"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!me && <p className="fine">Tap &ldquo;This is me&rdquo; on your name above to settle debts you&apos;re part of.</p>}
+                </>
               )}
             </>
           )}
-        </>
-      )}
 
-      {/* All-time tally: total won/lost across every finished session (settling
-          up doesn't move these — a repayment isn't a win or a loss). */}
-      <h2>All-time tally</h2>
-      {career.length === 0 ? (
-        <p className="hint">No finished sessions yet — it fills in as sessions end.</p>
-      ) : (
-        <div className="balances">
-          {career.map(({ p, v, g }) => (
-            <div key={p} className="bal-row">
-              <span>
-                {p}
-                {g > 0 && <span className="meta"> · {g} game{g === 1 ? "" : "s"}</span>}
-              </span>
-              <span className={"bal " + (v >= 0 ? "pos" : "neg")}>{v >= 0 ? "+" : ""}{money(v)}</span>
+          <h2>All-time tally</h2>
+          {career.length === 0 ? (
+            <p className="hint">No finished sessions yet — it fills in as sessions end.</p>
+          ) : (
+            <div className="balances">
+              {career.map(({ p, v, g }) => (
+                <div key={p} className="bal-row">
+                  <span>{p}{g > 0 && <span className="meta"> · {g} game{g === 1 ? "" : "s"}</span>}</span>
+                  <span className={"bal " + (v >= 0 ? "pos" : "neg")}>{v >= 0 ? "+" : ""}{money(v)}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          )}
 
-      {settlements.length > 0 && (
-        <>
-          <h2>Settled up</h2>
-          <div className="log">
-            {settlements.map((s, i) => (
-              <div key={i} className="log-row" style={{ opacity: 0.85 }}>
-                {s.from} paid {s.to} <strong>{money(s.amount)}</strong>
+          {settlements.length > 0 && (
+            <>
+              <h2>Settled up</h2>
+              <div className="log">
+                {settlements.map((s, i) => (
+                  <div key={i} className="log-row" style={{ opacity: 0.85 }}>{s.from} paid {s.to} <strong>{money(s.amount)}</strong></div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </>
       )}
 
@@ -291,7 +408,6 @@ export function GroupScreen({
 
 // ------------------------------------------------------------ session setup
 
-// A locked (not-yet-relevant) section gets the shared .locked class.
 const lockCls = (locked: boolean) => (locked ? " locked" : "");
 
 export function NewSession({
@@ -306,7 +422,7 @@ export function NewSession({
   presets: PayoutPreset[];
   busy?: boolean;
   error?: string;
-  onStart: (opts: { mahjongType: string; players: string[]; settle: boolean; bases?: PayoutConfig }) => void;
+  onStart: (opts: { mahjongType: string; players: string[]; settle: boolean; bases?: PayoutConfig; name?: string }) => void;
   onBack: () => void;
 }) {
   useBackButton(onBack);
@@ -317,6 +433,7 @@ export function NewSession({
   const need = seatsFor(mtype);
   const [selected, setSelected] = useState<string[]>([]);
   const [payCfg, setPayCfg] = useState<PayoutConfig | null>(null);
+  const [sessName, setSessName] = useState("");
 
   const enoughNames = roster.length >= need;
   const playersPicked = selected.length === need;
@@ -326,13 +443,11 @@ export function NewSession({
     haptic("selection");
     setSelected((prev) => {
       if (prev.includes(name)) return prev.filter((p) => p !== name);
-      if (prev.length >= need) return prev; // can't pick more than the table seats
+      if (prev.length >= need) return prev;
       return [...prev, name];
     });
   };
 
-  // Switching type changes how many seats there are; drop selections that no
-  // longer fit so we never start with the wrong count.
   const pickType = (v: string) => {
     haptic("selection");
     setMtype(v);
@@ -341,34 +456,28 @@ export function NewSession({
 
   const start = () => {
     if (!ready) return;
-    onStart({ mahjongType: mtype, players: selected, settle: true, bases: payCfg! });
+    onStart({ mahjongType: mtype, players: selected, settle: true, bases: payCfg!, name: sessName.trim() || undefined });
   };
 
   return (
     <div>
       <h1>Start a session</h1>
-      <p className="hint">
-        One sitting at the table. Pick the type, who&apos;s playing, and the payouts. It tallies into the group&apos;s debt counter when it ends.
-      </p>
+      <p className="hint">One sitting at the table. Pick the type, who&apos;s playing, name it, and the payouts. It tallies into the group&apos;s debts when it ends.</p>
 
-      {/* 1. Type */}
       <h2>Mahjong type</h2>
       <div className="row">
         {[{ v: "sg4", label: "Singaporean (4p)" }, { v: "my3", label: "Malaysian (3p) — WIP" }].map((o) => (
-          <button type="button" key={o.v} className={"chip" + (mtype === o.v ? " selected" : "")}
-            onClick={() => pickType(o.v)}>{o.label}</button>
+          <button type="button" key={o.v} className={"chip" + (mtype === o.v ? " selected" : "")} onClick={() => pickType(o.v)}>{o.label}</button>
         ))}
       </div>
-      {mtype === "my3" && (
-        <p className="fine">
-          Malaysian scoring isn&apos;t built yet — the session runs with the Singaporean actions for now. (WIP)
-        </p>
-      )}
+      {mtype === "my3" && <p className="fine">Malaysian scoring isn&apos;t built yet — the session runs with the Singaporean actions for now. (WIP)</p>}
 
-      {/* 2. Who's playing */}
+      <h2>Session name <small>optional</small></h2>
+      <input className="text-input" maxLength={40} placeholder='e.g. "Friday night"' value={sessName} onChange={(e) => setSessName(e.target.value)} />
+
       <h2>Who&apos;s playing <small>({selected.length}/{need})</small></h2>
       {!enoughNames ? (
-        <p className="err">This group has {roster.length} name{roster.length === 1 ? "" : "s"} — add {need - roster.length} more on the group page to play {need}-player.</p>
+        <p className="err">This group has {roster.length} name{roster.length === 1 ? "" : "s"} — add {need - roster.length} more to play {need}-player.</p>
       ) : (
         <>
           <p className="hint">Tick exactly {need} players for this session.</p>
@@ -377,8 +486,7 @@ export function NewSession({
               const on = selected.includes(p);
               const full = !on && selected.length >= need;
               return (
-                <div key={p} className={"choice-btn" + (on ? " selected-choice" : "") + lockCls(full)}
-                  onClick={() => (!full || on) && toggle(p)}>
+                <div key={p} className={"choice-btn" + (on ? " selected-choice" : "") + lockCls(full)} onClick={() => (!full || on) && toggle(p)}>
                   {p}{on && <small>playing</small>}
                 </div>
               );
@@ -387,8 +495,6 @@ export function NewSession({
         </>
       )}
 
-      {/* 3. Payouts — the same table as the old create screen (greyed until the
-          right number of players is picked). */}
       <h2 className={playersPicked ? undefined : "locked"}>Payouts</h2>
       <div className={playersPicked ? undefined : "locked"}>
         <PayoutEditor presets={presets} onChange={setPayCfg} />

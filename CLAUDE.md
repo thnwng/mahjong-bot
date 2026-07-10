@@ -26,7 +26,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `supabase/functions/track/` | THE backend: validates Telegram initData (HMAC) on every call, service-role DB access |
 | `supabase/functions/bot/` | Webhook bot (@jpgmahjongbot): /start /open /help, group binding, fail-closed secret check |
 | `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |
-| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement; 0006 = `trackers.tai_scores` jsonb for per-group winning-hand scoring); apply new ones in the SQL editor BEFORE the matching function deploys |
+| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement; 0006 = `trackers.tai_scores` jsonb for per-group winning-hand scoring; 0007 = `sessions.name` + `remove_player` RPC for the group-screen rebuild); apply new ones in the SQL editor BEFORE the matching function deploys |
 
 ## Branch topology (as of 2026-07-10 — mirrors the Clabbers rule)
 
@@ -94,6 +94,15 @@ may record it, the amount is clamped to what's outstanding, and it nets out of
   secrets** (`BOT_TOKEN`, `WEBHOOK_SECRET`), never in this repo or global env.
 - `startapp` params are prefix-typed: `g<chatId>` = launched from a Telegram
   group; bare 6-char code = direct join link (alphabet excludes 0/O/1/I/L).
+- **Destructive money ops (2026-07-11 group rebuild)**: `remove-player`,
+  `delete-session`, `settle-all` require a SEATED member (`info.me`, not just
+  isMember) + money-safety guards — remove-player rejects a name with a non-zero
+  balance or one in the running session; **delete-session refuses an ENDED
+  session once any repayment (`meta.k='settle'`) exists**, because settlements
+  are session-agnostic (`session_id` null) and deleting the game rows would
+  otherwise orphan the settlement into a phantom REVERSE debt (adversarial-review
+  finding, 2026-07-11). The LINK-FIRST peer-trust model still holds: any seated
+  member can run these — a documented product decision, not an owner role.
 - Standing DON'Ts (with triggers) are at the end of
   [IMPROVEMENT-PLAN.md](IMPROVEMENT-PLAN.md): no state library, no Supabase
   Realtime, no sdk-react migration, no UI/E2E tests.

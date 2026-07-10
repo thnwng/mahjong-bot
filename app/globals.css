@@ -844,6 +844,87 @@ select.text-input {
   border-bottom-color: var(--accent);
 }
 
+/* Group screen header (name + rename pencil ... settings gear top-right) */
+.group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* Small square icon button (rename, settings, copy, remove, delete) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+}
+
+.icon-btn:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.icon-btn.danger:hover {
+  color: var(--danger-text);
+  border-color: var(--danger);
+}
+
+h1 .icon-btn {
+  width: 26px;
+  height: 26px;
+}
+
+/* Section break between the players area and the tabbed subsection */
+.section-break {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 20px 0 14px;
+}
+
+/* Invite link row (link + copy button) */
+.invite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+}
+
+.invite-link {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* Inline warning (remove player / delete session confirm) */
+.warn {
+  font-size: var(--text-sm);
+  color: var(--danger-text);
+  background: var(--danger-subtle);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  padding: 8px 11px;
+  margin: 8px 0;
+}
+
 .hand-demo {
   display: flex;
   flex-wrap: wrap;

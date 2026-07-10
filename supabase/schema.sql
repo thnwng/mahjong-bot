@@ -71,6 +71,18 @@ create or replace function add_player(p_id uuid, p_name text) returns void
 revoke all on function add_player(uuid, text) from public, anon, authenticated;
 grant execute on function add_player(uuid, text) to service_role;
 
+-- 0007: atomic roster removal (mirrors add_player). Gated by the edge function
+-- (member-only, balance settled, not in the running session).
+create or replace function remove_player(p_id uuid, p_name text) returns void
+  language sql security definer as $$
+    update trackers set players = coalesce(
+      (select jsonb_agg(elem) from jsonb_array_elements(players) elem where elem <> to_jsonb(p_name)),
+      '[]'::jsonb)
+    where id = p_id;
+  $$;
+revoke all on function remove_player(uuid, text) from public, anon, authenticated;
+grant execute on function remove_player(uuid, text) to service_role;
+
 -- One profile per Telegram account. `username` is a DISPLAY NAME (a plain
 -- label, NOT unique — the old unique index was dropped in migration 0003;
 -- the column name is kept as `username`). Seeded from the user's Telegram
@@ -206,6 +218,7 @@ create table if not exists sessions (
   players      jsonb not null default '[]',            -- the 3-4 roster names playing this sitting (0004)
   bases        jsonb,                                  -- payout config for this session
   settle       boolean not null default true,          -- false = "ownself settle" (no payout tracking)
+  name         text,                                   -- optional session label (0007)
   started_by   text,
   started_at   timestamptz not null default now(),
   ended_at     timestamptz
@@ -214,6 +227,7 @@ create index if not exists sessions_tracker_idx on sessions (tracker_id, started
 create unique index if not exists sessions_one_active on sessions (tracker_id) where ended_at is null;
 alter table sessions enable row level security;
 alter table sessions add column if not exists players jsonb not null default '[]'; -- 0004
+alter table sessions add column if not exists name text;                          -- 0007
 
 alter table actions add column if not exists session_id uuid references sessions(id) on delete set null;
 create index if not exists actions_session_idx on actions (session_id);

@@ -36,7 +36,7 @@ type Tracker = { id: string; code: string; game: string; name: string; players: 
 type Member = { tracker_id: string; user_id: number; name: string | null; created_at: string };
 type Meta = Record<string, unknown> | null;
 type Action = { id: string; tracker_id: string; session_id: string | null; actioner: string; summary: string; transfers: Transfer[]; meta: Meta; created_at: string };
-type Session = { id: string; tracker_id: string; mahjong_type: string; players: string[]; bases: PayoutConfig | null; settle: boolean; started_by: string | null; started_at: string; ended_at: string | null };
+type Session = { id: string; tracker_id: string; mahjong_type: string; players: string[]; bases: PayoutConfig | null; settle: boolean; name?: string | null; started_by: string | null; started_at: string; ended_at: string | null };
 type Profile = { username: string; auto_sync: boolean; game_types: string[] | null; payout_presets: { name: string; cfg: PayoutConfig }[] };
 type DB = { trackers: Tracker[]; members: Member[]; actions: Action[]; sessions: Session[]; profiles: Record<number, Profile> };
 
@@ -126,11 +126,21 @@ function groupState(db: DB, tracker: Tracker, uid: number) {
       }
     }
   }
-  // Games played = ended sessions each roster name actually sat in.
-  const games: Record<string, number> = {};
-  for (const s of db.sessions) {
-    if (s.tracker_id === tracker.id && s.ended_at) for (const p of s.players || []) games[p] = (games[p] || 0) + 1;
+  // Games played + full session history (newest first), each with its own net.
+  const netBySession: Record<string, Record<string, number>> = {};
+  for (const a of rows) {
+    if (!a.session_id) continue;
+    const nb = netBySession[a.session_id] || (netBySession[a.session_id] = {});
+    for (const t of a.transfers || []) { nb[t.payer] = (nb[t.payer] || 0) - t.amount; nb[t.payee] = (nb[t.payee] || 0) + t.amount; }
   }
+  const games: Record<string, number> = {};
+  const sessions = db.sessions
+    .filter((s) => s.tracker_id === tracker.id)
+    .sort((a, b) => b.started_at.localeCompare(a.started_at))
+    .map((s) => {
+      if (s.ended_at) for (const p of s.players || []) games[p] = (games[p] || 0) + 1;
+      return { id: s.id, name: s.name ?? null, players: s.players || [], settle: s.settle, started_by: s.started_by, started_at: s.started_at, ended_at: s.ended_at, net: netBySession[s.id] || {} };
+    });
   // A short audit trail of settlements so a repayment isn't invisible money.
   const settlements = rows
     .filter(isSettle)
@@ -142,7 +152,24 @@ function groupState(db: DB, tracker: Tracker, uid: number) {
     .slice(-10)
     .reverse();
   const info = seatInfo(db, tracker.id, uid);
-  return { tracker, actions, session, debts, allTime, games, settlements, me: info.me, isMember: info.isMember, claimedNames: info.claimedNames };
+  return { tracker, actions, session, debts, allTime, games, sessions, settlements, me: info.me, isMember: info.isMember, claimedNames: info.claimedNames };
+}
+
+// Greedy who-owes-who from net balances (mirrors the track function).
+function settleUpPairs(net: Record<string, number>): Array<{ from: string; to: string; amount: number }> {
+  const EPS = 0.004;
+  const debtors = Object.entries(net).filter(([, v]) => v < -EPS).map(([n, v]) => ({ n, v: -v })).sort((a, b) => b.v - a.v);
+  const creditors = Object.entries(net).filter(([, v]) => v > EPS).map(([n, v]) => ({ n, v })).sort((a, b) => b.v - a.v);
+  const out: Array<{ from: string; to: string; amount: number }> = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const pay = Math.min(debtors[i].v, creditors[j].v);
+    out.push({ from: debtors[i].n, to: creditors[j].n, amount: pay });
+    debtors[i].v -= pay; creditors[j].v -= pay;
+    if (debtors[i].v <= EPS) i++;
+    if (creditors[j].v <= EPS) j++;
+  }
+  return out;
 }
 
 // The one entry point remote.ts calls in offline mode. Throws Error(message) on
@@ -198,7 +225,8 @@ export async function localCall<T>(op: string, payload: Record<string, unknown>)
   if (op === "create") {
     // A group now starts as just a name + share code with an EMPTY roster.
     // Names (placeholders) are added afterwards; payouts are chosen per session.
-    const name = String(payload.name || "").trim() || "Mahjong";
+    const name = String(payload.name || "").trim().slice(0, NAME_MAX) || "Mahjong";
+    if (!validName(name)) err(`name must be 1-${NAME_MAX} characters, no control characters`);
     const dtype = payload.defaultType === "my3" ? "my3" : "sg4";
     let code = randomCode();
     while (db.trackers.some((t) => t.code === code)) code = randomCode();
@@ -299,7 +327,8 @@ export async function localCall<T>(op: string, payload: Record<string, unknown>)
       if (players.some((p) => !roster.has(p))) err("a chosen player isn't in the group");
       const settle = payload.settle !== false;
       if (activeSession(db, tracker.id)) err("a session is already running");
-      db.sessions.push({ id: uuid(), tracker_id: tracker.id, mahjong_type: mt, players, bases: settle ? ((payload.bases as PayoutConfig) ?? tracker.bases) : null, settle, started_by: info.me ?? actioner, started_at: nowIso(), ended_at: null });
+      const sName = String(payload.name || "").trim().slice(0, 40) || null;
+      db.sessions.push({ id: uuid(), tracker_id: tracker.id, mahjong_type: mt, players, bases: settle ? ((payload.bases as PayoutConfig) ?? tracker.bases) : null, settle, name: sName, started_by: info.me ?? actioner, started_at: nowIso(), ended_at: null });
     } else {
       const s = activeSession(db, tracker.id);
       if (!s) err("no active session");
@@ -373,6 +402,75 @@ export async function localCall<T>(op: string, payload: Record<string, unknown>)
       transfers: [{ payer: to, payee: from, amount: amt }],
       meta: { k: "settle", from, to }, created_at: nowIso(),
     });
+    return out(groupState(db, tracker, uid));
+  }
+
+  if (op === "rename-group") {
+    const tracker = byCode();
+    const info = seatInfo(db, tracker.id, uid);
+    if (!info.isMember) err("join the group first");
+    const newName = String(payload.name || "").trim();
+    if (!validName(newName)) err(`name must be 1-${NAME_MAX} characters, no control characters`);
+    tracker.name = newName;
+    return out(groupState(db, tracker, uid));
+  }
+
+  if (op === "remove-player") {
+    const tracker = byCode();
+    const info = seatInfo(db, tracker.id, uid);
+    if (!info.isMember) err("join the group first");
+    const target = String(payload.name || "").trim();
+    if (!target) err("name required");
+    if (!tracker.players.includes(target)) err("no such player");
+    const active = activeSession(db, tracker.id);
+    if (active && (active.players || []).includes(target)) err(`${target} is in the running session — end it first`);
+    const st = groupState(db, tracker, uid);
+    const net = (st.debts as Record<string, number>)[target] || 0;
+    if (Math.abs(net) > 0.004) err(`settle ${target}'s balance first — they're ${net > 0 ? "owed" : "owing"} money`);
+    tracker.players = tracker.players.filter((p) => p !== target);
+    db.members = db.members.filter((m) => !(m.tracker_id === tracker.id && m.name === target));
+    return out(groupState(db, tracker, uid));
+  }
+
+  if (op === "delete-session") {
+    const tracker = byCode();
+    const info = seatInfo(db, tracker.id, uid);
+    if (!info.isMember) err("join the group first");
+    if (!info.me) err("claim a seat in the group first");
+    const sid = String(payload.sessionId || "");
+    if (!sid) err("session required");
+    const s = db.sessions.find((x) => x.id === sid && x.tracker_id === tracker.id);
+    if (!s) err("session not found");
+    // Settlements are session-agnostic, so deleting an ENDED session after a
+    // repayment would orphan the settlement into a phantom reverse debt.
+    if (s!.ended_at && db.actions.some((a) => a.tracker_id === tracker.id && isSettle(a))) {
+      err("can't delete an ended session after a debt has been settled — undo the settlements first");
+    }
+    db.actions = db.actions.filter((a) => !(a.tracker_id === tracker.id && a.session_id === sid));
+    db.sessions = db.sessions.filter((x) => x.id !== sid);
+    return out(groupState(db, tracker, uid));
+  }
+
+  if (op === "settle-all") {
+    const tracker = byCode();
+    const info = seatInfo(db, tracker.id, uid);
+    if (!info.isMember) err("join the group first");
+    if (!info.me) err("claim a seat in the group first");
+    const st = groupState(db, tracker, uid);
+    for (const p of settleUpPairs(st.debts as Record<string, number>)) {
+      db.actions.push({
+        id: uuid(), tracker_id: tracker.id, session_id: null, actioner,
+        summary: `${p.from} settled up with ${p.to} (${p.amount.toFixed(2)})`,
+        transfers: [{ payer: p.to, payee: p.from, amount: p.amount }],
+        meta: { k: "settle", from: p.from, to: p.to }, created_at: nowIso(),
+      });
+    }
+    return out(groupState(db, tracker, uid));
+  }
+
+  if (op === "announce") {
+    // No Telegram in offline mode — succeed as a no-op.
+    const tracker = byCode();
     return out(groupState(db, tracker, uid));
   }
 

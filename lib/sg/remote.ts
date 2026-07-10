@@ -37,9 +37,22 @@ export interface Session {
   players: string[];                 // the 3-4 roster names actually playing this sitting
   bases: PayoutConfig | null;
   settle: boolean;                   // false = "ownself settle" (no payout tracking)
+  name?: string | null;              // optional session label (0007)
   started_by?: string | null;
   started_at: string;
   ended_at?: string | null;
+}
+
+// One row in the session-history tab: a session + its own net per player.
+export interface SessionSummary {
+  id: string;
+  name?: string | null;
+  players: string[];
+  settle: boolean;
+  started_by?: string | null;
+  started_at: string;
+  ended_at?: string | null;
+  net: Record<string, number>;
 }
 
 // Structured action so the log can render CURRENT seat names (rename rewrites
@@ -70,6 +83,7 @@ export interface TrackerState {
   debts?: Record<string, number>; // OUTSTANDING net per player (ended sessions minus settlements)
   allTime?: Record<string, number>; // career win/loss per player (ignores settlements)
   games?: Record<string, number>;   // ended sessions each player has sat in
+  sessions?: SessionSummary[];       // full session history (newest first) for the history tab
   settlements?: Settlement[];        // recent repayments (newest first) — a small audit trail
   me?: string | null;        // the seat THIS account claimed (null = in the group but unseated)
   isMember?: boolean;        // you're in the group (opened its link), seated or not
@@ -183,7 +197,7 @@ export const savePreset = (name: string, cfg: PayoutConfig) =>
 
 /** Start a session in a group (409 if one is already running). `players` is the
  *  subset of the roster actually playing this sitting (4 for sg4, 3 for my3). */
-export const startSession = (code: string, opts: { mahjongType: string; players: string[]; settle: boolean; bases?: PayoutConfig }) =>
+export const startSession = (code: string, opts: { mahjongType: string; players: string[]; settle: boolean; bases?: PayoutConfig; name?: string }) =>
   call<TrackerState>("start-session", { code, ...opts });
 
 /** End the group's active session; its actions freeze into the debt counter. */
@@ -205,6 +219,22 @@ export const setGroupTai = (code: string, scores: Record<string, string>) =>
  *  roster + past transfers server-side so balances stay correct. Throws "that
  *  name is taken in this group" (409) if another seat already uses it. */
 export const renameSeat = (code: string, name: string) => call<TrackerState>("rename-seat", { code, name });
+
+/** Rename the whole group. Any member may. */
+export const renameGroup = (code: string, name: string) => call<TrackerState>("rename-group", { code, name });
+
+/** Remove a name from the group. Server rejects it (409) unless their balance is
+ *  settled to zero and they're not in the running session. */
+export const removePlayer = (code: string, name: string) => call<TrackerState>("remove-player", { code, name });
+
+/** Delete a session AND its money (a true undo — recomputes balances). */
+export const deleteSession = (code: string, sessionId: string) => call<TrackerState>("delete-session", { code, sessionId });
+
+/** Record a repayment for every outstanding who-owes-who line at once. */
+export const settleAll = (code: string) => call<TrackerState>("settle-all", { code });
+
+/** Re-post the group's join button into the Telegram chat it's bound to. */
+export const sendInviteToChat = (code: string) => call<TrackerState>("announce", { code });
 
 /** Create a group. It starts with an empty roster and a share code; names and
  *  payouts are added afterwards (names on the group page, payouts per session).

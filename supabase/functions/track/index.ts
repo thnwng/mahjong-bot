@@ -220,12 +220,26 @@ async function groupState(sb: SB, tracker: Record<string, unknown>, userId: numb
       }
     }
   }
-  // Games played = ended sessions each roster name actually sat in.
-  const { data: sess } = await sb.from("sessions").select("players, ended_at").eq("tracker_id", tid);
-  const games: Record<string, number> = {};
-  for (const s of (sess || []) as Array<{ players: unknown; ended_at: string | null }>) {
-    if (s.ended_at && Array.isArray(s.players)) for (const p of s.players as string[]) games[p] = (games[p] || 0) + 1;
+  // All sessions (newest first) for the history tab, each with its own net (from
+  // its actions, already in `rows`), plus the games-played count per name.
+  const { data: sess } = await sb.from("sessions")
+    .select("id, name, players, settle, started_by, started_at, ended_at")
+    .eq("tracker_id", tid).order("started_at", { ascending: false });
+  const netBySession: Record<string, Record<string, number>> = {};
+  for (const a of rows) {
+    if (!a.session_id) continue;
+    const nb = netBySession[a.session_id] || (netBySession[a.session_id] = {});
+    for (const t of a.transfers || []) { nb[t.payer] = (nb[t.payer] || 0) - t.amount; nb[t.payee] = (nb[t.payee] || 0) + t.amount; }
   }
+  const games: Record<string, number> = {};
+  const sessions = ((sess || []) as Array<{ id: string; name: string | null; players: unknown; settle: boolean; started_by: string | null; started_at: string; ended_at: string | null }>).map((s) => {
+    if (s.ended_at && Array.isArray(s.players)) for (const p of s.players as string[]) games[p] = (games[p] || 0) + 1;
+    return {
+      id: s.id, name: s.name, players: Array.isArray(s.players) ? s.players : [],
+      settle: s.settle, started_by: s.started_by, started_at: s.started_at, ended_at: s.ended_at,
+      net: netBySession[s.id] || {},
+    };
+  });
   // A short audit trail of settlements so a repayment isn't invisible money.
   const settlements = rows
     .filter(isSettle)
@@ -237,7 +251,25 @@ async function groupState(sb: SB, tracker: Record<string, unknown>, userId: numb
     .slice(-10)
     .reverse();
   const info = await seatInfo(sb, tid, userId);
-  return { tracker, actions, session, debts, allTime, games, settlements, me: info.me, isMember: info.isMember, claimedNames: info.claimedNames };
+  return { tracker, actions, session, debts, allTime, games, sessions, settlements, me: info.me, isMember: info.isMember, claimedNames: info.claimedNames };
+}
+
+// Greedy who-owes-who from net balances (biggest debtor pays biggest creditor
+// until square). Shared shape with the client's settleUp in components/sg/Group.tsx.
+function settleUpPairs(net: Record<string, number>): Array<{ from: string; to: string; amount: number }> {
+  const EPS = 0.004;
+  const debtors = Object.entries(net).filter(([, v]) => v < -EPS).map(([n, v]) => ({ n, v: -v })).sort((a, b) => b.v - a.v);
+  const creditors = Object.entries(net).filter(([, v]) => v > EPS).map(([n, v]) => ({ n, v })).sort((a, b) => b.v - a.v);
+  const out: Array<{ from: string; to: string; amount: number }> = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const pay = Math.min(debtors[i].v, creditors[j].v);
+    out.push({ from: debtors[i].n, to: creditors[j].n, amount: pay });
+    debtors[i].v -= pay; creditors[j].v -= pay;
+    if (debtors[i].v <= EPS) i++;
+    if (creditors[j].v <= EPS) j++;
+  }
+  return out;
 }
 
 // --- Display names (one per Telegram account; NOT unique) ---------------------
@@ -398,7 +430,8 @@ Deno.serve(async (req) => {
       const { name: rawName, tgChatId, defaultType } = body as unknown as {
         name?: string; tgChatId?: number; defaultType?: string;
       };
-      const name = String(rawName || "").trim() || "Mahjong";
+      const name = String(rawName || "").trim().slice(0, NAME_MAX) || "Mahjong";
+      if (!validName(name)) return json({ error: `name must be 1-${NAME_MAX} characters, no control characters` }, 400);
       const chat = typeof tgChatId === "number" && Number.isFinite(tgChatId) ? tgChatId : null;
       // What this group usually plays; prefills each session's type.
       const dtype = defaultType === "my3" ? "my3" : "sg4";
@@ -445,10 +478,11 @@ Deno.serve(async (req) => {
         if (players.some((p) => !roster.has(p))) return json({ error: "a chosen player isn't in the group" }, 400);
         const settle = (body as unknown as { settle?: boolean }).settle !== false;
         const bases = settle ? ((body as unknown as { bases?: unknown }).bases ?? tracker.bases) : null;
+        const sName = String((body as { name?: string }).name || "").trim().slice(0, 40) || null;
         // The one-active-per-group rule is the partial unique index, so a racing
         // second start loses with 23505 — never two live sessions.
         const { data: inserted, error: se } = await sb.from("sessions")
-          .insert({ tracker_id: tracker.id, mahjong_type: mt, players, bases, settle, started_by: info.me ?? actioner })
+          .insert({ tracker_id: tracker.id, mahjong_type: mt, players, bases, settle, name: sName, started_by: info.me ?? actioner })
           .select("id").single();
         if (se) {
           if ((se as { code?: string }).code === "23505") return json({ error: "a session is already running" }, 409);
@@ -688,6 +722,115 @@ Deno.serve(async (req) => {
       });
       if (se) throw se;
       if (!(Number(settled) > 0.004)) return json({ error: "nothing outstanding between them" }, 409);
+      return json(await groupState(sb, tracker, userId));
+    }
+
+    if (op === "rename-group") {
+      // Rename the group (its display name). Any member may.
+      if (!userId) return json({ error: "no account" }, 401);
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const newName = String((body as { name?: string }).name || "").trim();
+      if (!validName(newName)) return json({ error: `name must be 1-${NAME_MAX} characters, no control characters` }, 400);
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      const info = await seatInfo(sb, tracker.id, userId);
+      if (!info.isMember) return json({ error: "join the group first" }, 403);
+      const { error: ue } = await sb.from("trackers").update({ name: newName }).eq("id", tracker.id);
+      if (ue) throw ue;
+      const { data: t2 } = await sb.from("trackers").select().eq("code", code).single();
+      return json(await groupState(sb, t2 || tracker, userId));
+    }
+
+    if (op === "remove-player") {
+      // Remove a name from the group. Guarded so the books stay balanced: only
+      // when their balance is settled (net ~0) and they're not in the running
+      // session ("deconflict money first"). Drops the roster name + claimed seat.
+      if (!userId) return json({ error: "no account" }, 401);
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const target = String((body as { name?: string }).name || "").trim();
+      if (!target) return json({ error: "name required" }, 400);
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      const info = await seatInfo(sb, tracker.id, userId);
+      if (!info.isMember) return json({ error: "join the group first" }, 403);
+      const players: string[] = Array.isArray(tracker.players) ? tracker.players : [];
+      if (!players.includes(target)) return json({ error: "no such player" }, 404);
+      const active = await activeSession(sb, tracker.id);
+      const ap = Array.isArray((active as SessionRow | null)?.players) ? (active as unknown as { players: string[] }).players : [];
+      if (active && ap.includes(target)) return json({ error: `${target} is in the running session — end it first` }, 409);
+      const st = await groupState(sb, tracker, userId);
+      const net = (st.debts as Record<string, number>)[target] || 0;
+      if (Math.abs(net) > 0.004) return json({ error: `settle ${target}'s balance first — they're ${net > 0 ? "owed" : "owing"} money` }, 409);
+      const { error: re } = await sb.rpc("remove_player", { p_id: tracker.id, p_name: target });
+      if (re) throw re;
+      // Drop the claimed seat too (they can rejoin via the link if needed).
+      await sb.from("members").delete().eq("tracker_id", tracker.id).eq("name", target);
+      const { data: t2 } = await sb.from("trackers").select().eq("code", code).single();
+      return json(await groupState(sb, t2 || tracker, userId));
+    }
+
+    if (op === "delete-session") {
+      // Delete a session AND its money (a true undo). actions.session_id is ON
+      // DELETE SET NULL, so we delete the session's actions FIRST (else they'd
+      // survive as session-less debt), then the session row. Any member may.
+      if (!userId) return json({ error: "no account" }, 401);
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const sid = String((body as { sessionId?: string }).sessionId || "");
+      if (!sid) return json({ error: "session required" }, 400);
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      const info = await seatInfo(sb, tracker.id, userId);
+      if (!info.isMember) return json({ error: "join the group first" }, 403);
+      if (!info.me) return json({ error: "claim a seat in the group first" }, 403);
+      const { data: s } = await sb.from("sessions").select("id, ended_at").eq("id", sid).eq("tracker_id", tracker.id).maybeSingle();
+      if (!s) return json({ error: "session not found" }, 404);
+      // Settlements (repayments) are session-agnostic (session_id null). Deleting
+      // an ENDED session whose debts were already settled would remove the game
+      // rows but leave the settlement, resurrecting a phantom REVERSE debt. Refuse
+      // once any repayment exists (undo settlements first). The ACTIVE session's
+      // actions never reach the debt tally, so it's always safe to cancel.
+      if ((s as { ended_at?: string | null }).ended_at) {
+        const { data: settled } = await sb.from("actions").select("id").eq("tracker_id", tracker.id).eq("meta->>k", "settle").limit(1);
+        if (settled && settled.length) return json({ error: "can't delete an ended session after a debt has been settled — undo the settlements first" }, 409);
+      }
+      const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
+      if (de) throw de;
+      const { error: xe } = await sb.from("sessions").delete().eq("id", sid).eq("tracker_id", tracker.id);
+      if (xe) throw xe;
+      return json(await groupState(sb, tracker, userId));
+    }
+
+    if (op === "settle-all") {
+      // Record a repayment for every outstanding who-owes-who line at once, each
+      // via the atomic settle_debt RPC (clamps to what's actually outstanding).
+      if (!userId) return json({ error: "no account" }, 401);
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      const info = await seatInfo(sb, tracker.id, userId);
+      if (!info.isMember) return json({ error: "join the group first" }, 403);
+      if (!info.me) return json({ error: "claim a seat in the group first" }, 403);
+      const st = await groupState(sb, tracker, userId);
+      const pairs = settleUpPairs(st.debts as Record<string, number>);
+      for (const p of pairs) {
+        const { error: se } = await sb.rpc("settle_debt", { p_tracker: tracker.id, p_from: p.from, p_to: p.to, p_amount: p.amount, p_actioner: actioner });
+        if (se) throw se;
+      }
+      return json(await groupState(sb, tracker, userId));
+    }
+
+    if (op === "announce") {
+      // Re-post the group's "tap to join" button into the Telegram chat it's
+      // bound to (the group this app was opened in). Member-only.
+      if (!userId) return json({ error: "no account" }, 401);
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      const info = await seatInfo(sb, tracker.id, userId);
+      if (!info.isMember) return json({ error: "join the group first" }, 403);
+      const chatId = Number((tracker as { tg_chat_id?: number }).tg_chat_id);
+      if (!Number.isFinite(chatId) || !chatId) return json({ error: "this group isn't linked to a Telegram chat" }, 400);
+      await announceGroup(chatId, tracker.name || "Mahjong", actioner, tracker.code);
       return json(await groupState(sb, tracker, userId));
     }
 

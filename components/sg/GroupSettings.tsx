@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { useBackButton, haptic } from "@/lib/telegram";
-import { BOT_APP_LINK, getState, setGroupTai } from "@/lib/sg/remote";
+import { BOT_APP_LINK, getState, setGroupTai, settleAll } from "@/lib/sg/remote";
 import {
   Hand, Demo, STANDARD, EVENTS, FLOWERS, SPECIAL, TAI_HANDS, TAI_OPTIONS,
 } from "./taiCatalog";
@@ -19,7 +19,9 @@ const errMsg = (e: unknown) => String((e as Error)?.message || e);
 
 export default function GroupSettings({ code, name, onBack }: { code: string; name: string; onBack: () => void }) {
   useBackButton(onBack);
-  const [tab, setTab] = useState<"scoring" | "about">("scoring");
+  const [tab, setTab] = useState<"about" | "scoring">("about");
+  const [settleState, setSettleState] = useState<"" | "confirm" | "busy" | "done">("");
+  const [settleErr, setSettleErr] = useState(""); // separate from the scoring-load `err`
   const [values, setValues] = useState<Record<string, string>>(TAI_DEFAULTS);
   const [saved, setSaved] = useState<Record<string, string>>(TAI_DEFAULTS); // last-persisted snapshot
   const [status, setStatus] = useState<"loading" | "idle" | "saving" | "error">("loading");
@@ -59,6 +61,14 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
       // (editable, Save enabled) — no clobbering happened.
       setErr(errMsg(e)); setStatus("idle"); haptic("error");
     }
+  };
+
+  // Settle every outstanding debt at once (two-tap confirm).
+  const doSettleAll = async () => {
+    if (settleState !== "confirm") { setSettleState("confirm"); haptic("warning"); return; }
+    setSettleState("busy"); setSettleErr(""); haptic("light");
+    try { await settleAll(code); setSettleState("done"); haptic("success"); }
+    catch (e) { setSettleErr(errMsg(e)); setSettleState(""); haptic("error"); }
   };
 
   // Always show the current value as an option even if it's outside 0–10/限/限+1.
@@ -101,8 +111,8 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
       <h1>{name} <small>settings</small></h1>
 
       <div className="tabs">
-        <button type="button" className={"tab" + (tab === "scoring" ? " on" : "")} onClick={() => setTab("scoring")}>Scoring</button>
         <button type="button" className={"tab" + (tab === "about" ? " on" : "")} onClick={() => setTab("about")}>About</button>
+        <button type="button" className={"tab" + (tab === "scoring" ? " on" : "")} onClick={() => setTab("scoring")}>Scoring</button>
       </div>
 
       {tab === "scoring" ? (
@@ -151,9 +161,25 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
             <div className="line meta" style={{ wordBreak: "break-all" }}>{shareLink}</div>
             <div className="line meta">Share this link (or the code) so others can join.</div>
           </div>
+
+          <h2>Debts</h2>
+          <p className="fine">
+            Record a repayment for every outstanding &ldquo;who owes who&rdquo; line at once, clearing the
+            group&apos;s debt counter to zero.
+          </p>
+          {settleState === "done" ? (
+            <p className="hint">All debts settled.</p>
+          ) : (
+            <button className="chip" disabled={settleState === "busy"} onClick={doSettleAll}>
+              {settleState === "busy" ? "Settling…" : settleState === "confirm" ? "Tap again to settle all" : "Settle all debts"}
+            </button>
+          )}
+          {settleErr && <p className="err">{settleErr}</p>}
+
+          <h2>More</h2>
           <p className="hint">
-            More per-group settings will live here. For now, <strong>Scoring</strong> is the main one —
-            each group runs its own tai values, shared by all its members.
+            <strong>Scoring</strong> (next tab) is the main per-group setting — each group runs its own tai
+            values, shared by all its members.
           </p>
         </>
       )}

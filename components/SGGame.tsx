@@ -35,6 +35,7 @@ import {
   GAME_TYPES,
   GroupSummary,
   TrackerState,
+  OFFLINE,
 } from "@/lib/sg/remote";
 
 // Exactly one screen is showing at a time; every screen's data rides along in
@@ -106,7 +107,9 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   const [tab, setTab] = useState<GameType>("sg4");
   // Inside Telegram we have a validated account; outside (plain browser) we
   // don't. canSync also needs the backend URL configured.
-  const inTelegram = typeof window !== "undefined" && Boolean(window.Telegram?.WebApp?.initData);
+  // OFFLINE dev mode: the local backend stands in for Telegram, so the app is
+  // fully usable in a plain browser.
+  const inTelegram = OFFLINE || (typeof window !== "undefined" && Boolean(window.Telegram?.WebApp?.initData));
   const canSync = inTelegram && syncEnabled();
 
   // First-run gates: username, then the what-do-you-play checklist.

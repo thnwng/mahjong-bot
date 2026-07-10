@@ -1,9 +1,20 @@
 "use client";
 
-// Client layer for the group-synced tracker. All calls go to the Supabase
-// `track` Edge Function, which validates Telegram initData server-side.
+// Client layer for the group-synced tracker. In production all calls go to the
+// Supabase `track` Edge Function, which validates Telegram initData server-side.
+// A dev-only OFFLINE mode (NEXT_PUBLIC_OFFLINE=true, never set in the production
+// build) swaps in a localStorage backend (lib/sg/localBackend.ts) + fake users,
+// so the whole group flow is testable in a plain browser without Telegram.
 
 import { Transfer, PayoutConfig } from "./payout";
+// NOTE: the offline backend (./localBackend) is intentionally NOT imported at the
+// top — it's `await import()`-ed only inside `if (OFFLINE)` so it compiles into a
+// separate chunk that production (OFFLINE=false) never loads.
+
+// Dev-only. Build-time constant: process.env.NEXT_PUBLIC_OFFLINE is inlined at
+// build, so in the production build (where it's unset) this is a literal false
+// and every `if (OFFLINE)` branch below is dead-code-eliminated.
+export const OFFLINE = process.env.NEXT_PUBLIC_OFFLINE === "true";
 
 const TRACK_URL = process.env.NEXT_PUBLIC_TRACK_URL || "";
 
@@ -72,7 +83,7 @@ export interface Settlement {
   at: string;     // ISO time
 }
 
-export const syncEnabled = () => Boolean(TRACK_URL);
+export const syncEnabled = () => OFFLINE || Boolean(TRACK_URL);
 
 function initData(): string {
   if (typeof window === "undefined") return "";
@@ -80,6 +91,10 @@ function initData(): string {
 }
 
 async function call<T>(op: string, payload: Record<string, unknown>): Promise<T> {
+  if (OFFLINE) {
+    const { localCall } = await import("./localBackend");
+    return localCall<T>(op, payload);
+  }
   if (!TRACK_URL) throw new Error("Sync isn't configured (NEXT_PUBLIC_TRACK_URL not set).");
   const res = await fetch(TRACK_URL, {
     method: "POST",
@@ -237,8 +252,10 @@ export function parseStartParam(): { tgChatId?: number; code?: string } {
 // "Your groups" cache — instant paint before the server responds. Keyed PER
 // TELEGRAM ACCOUNT so two accounts on the same phone/browser never share it.
 function cacheKey(): string {
-  const uid =
-    typeof window !== "undefined" ? window.Telegram?.WebApp?.initDataUnsafe?.user?.id : undefined;
+  // OFFLINE reads the fake-user id inline (no static localBackend import).
+  const uid = OFFLINE
+    ? (typeof window !== "undefined" ? (Number(localStorage.getItem("mahjong-offline-uid")) || 1) : undefined)
+    : (typeof window !== "undefined" ? window.Telegram?.WebApp?.initDataUnsafe?.user?.id : undefined);
   return `mahjong-groups:${uid ?? "anon"}`;
 }
 export function localGroups(): GroupSummary[] {

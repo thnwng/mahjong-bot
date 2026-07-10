@@ -54,6 +54,7 @@ export function GroupScreen({
   busy,
   onNewSession,
   onEnterSession,
+  onOpenSettings,
   onBack,
 }: {
   state: TrackerState;
@@ -61,6 +62,7 @@ export function GroupScreen({
   busy?: boolean;
   onNewSession: () => void;
   onEnterSession: () => void;
+  onOpenSettings: () => void;
   onBack: () => void;
 }) {
   useBackButton(onBack);
@@ -131,6 +133,8 @@ export function GroupScreen({
         <div className="line meta" style={{ wordBreak: "break-all" }}>{shareLink}</div>
         <div className="line meta">Share this link (or the code) so others can join.</div>
       </div>
+
+      <button className="link-btn" style={{ marginTop: 0 }} onClick={onOpenSettings}>Group settings (scoring) →</button>
 
       {/* Roster: every name in the group. Anyone can add names; if you haven't
           claimed a seat, tap "This is me" on a name (or add your own). */}

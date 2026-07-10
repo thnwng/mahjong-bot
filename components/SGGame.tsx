@@ -14,6 +14,8 @@ import { GroupScreen, NewSession } from "@/components/sg/Group";
 import { Play } from "@/components/sg/Play";
 import { Settings } from "@/components/sg/Settings";
 import { SGTiles } from "@/components/sg/SGTiles";
+import SGTaiHands from "@/components/sg/SGTaiHands";
+import GroupSettings from "@/components/sg/GroupSettings";
 import {
   syncEnabled,
   parseStartParam,
@@ -41,11 +43,24 @@ type Screen =
   | { t: "home" }
   | { t: "settings" }
   | { t: "tiles" }                             // SG/Msia tile picker (tai helper)
+  | { t: "taihands" }                          // SG winning-hands tai reference
   | { t: "create" }
   | { t: "join" }                              // type a group code
   | { t: "group"; state: TrackerState }        // roster + claim + debts + session
+  | { t: "groupSettings"; code: string; name: string; ret: Screen } // per-group settings menu
   | { t: "newSession"; state: TrackerState }   // session setup
   | { t: "play"; state: TrackerState };        // the live session
+
+// Small gear icon (no emoji) for the per-group settings button.
+function Gear() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: "block" }}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
 
 const sumOf = (s: TrackerState): GroupSummary => ({ code: s.tracker.code, name: s.tracker.name, players: s.tracker.players.length });
 
@@ -280,9 +295,18 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
           busy={busy}
           onNewSession={() => setScreen({ t: "newSession", state: screen.state })}
           onEnterSession={() => setScreen({ t: "play", state: screen.state })}
+          onOpenSettings={() => setScreen({
+            t: "groupSettings",
+            code: screen.state.tracker.code,
+            name: screen.state.tracker.name || screen.state.tracker.code,
+            ret: { t: "group", state: screen.state },
+          })}
           onBack={goHome}
         />
       );
+
+    case "groupSettings":
+      return <GroupSettings code={screen.code} name={screen.name} onBack={() => setScreen(screen.ret)} />;
 
     case "newSession":
       return (
@@ -340,6 +364,9 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
     case "tiles":
       return <SGTiles onBack={goHome} />;
+
+    case "taihands":
+      return <SGTaiHands onBack={goHome} />;
 
     case "home": {
       const types: GameType[] = profile?.gameTypes?.length ? profile.gameTypes : ["sg4"];
@@ -405,6 +432,11 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
                           <button className="chip" style={{ padding: "2px 8px", fontSize: "0.8rem" }}
                             onClick={(e) => { e.stopPropagation(); moveUp(i); }}>↑</button>
                         )}
+                        <button className="chip" style={{ padding: "3px 7px", display: "inline-flex", alignItems: "center" }}
+                          aria-label={`${g.name || g.code} settings`}
+                          onClick={(e) => { e.stopPropagation(); setScreen({ t: "groupSettings", code: g.code, name: g.name || g.code, ret: { t: "home" } }); }}>
+                          <Gear />
+                        </button>
                       </span>
                     </div>
                   ))}
@@ -440,7 +472,8 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
           )}
 
           {(shownTab === "sg4" || shownTab === "my3") && (
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
+              <button className="link-btn" onClick={() => setScreen({ t: "taihands" })}>Winning hands &amp; tai table →</button>
               <button className="link-btn" onClick={() => setScreen({ t: "tiles" })}>Tai calculator (tiles) →</button>
             </div>
           )}

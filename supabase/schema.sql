@@ -13,6 +13,7 @@ create table if not exists trackers (
   players     jsonb not null default '[]',           -- ["Alice","Bob",...]; [] = stub, not set up yet
   bases       jsonb not null default '{"tai":0.1,"yao":0.2,"gang":0.2}',
   tg_chat_id  bigint,                                -- owning Telegram group (null = app-made group); NOT unique: a chat can own several groups
+  tai_scores  jsonb,                                 -- per-group winning-hand tai values {handId:value}; null = app defaults (0006)
   created_at  timestamptz not null default now()
 );
 
@@ -196,6 +197,7 @@ alter table actions  enable row level security;
 alter table profiles add column if not exists game_types jsonb;                     -- null = first-run checklist not done
 alter table profiles add column if not exists payout_presets jsonb not null default '[]';
 alter table trackers add column if not exists default_type text not null default 'sg4';
+alter table trackers add column if not exists tai_scores jsonb;                     -- per-group scoring (0006)
 
 create table if not exists sessions (
   id           uuid primary key default gen_random_uuid(),

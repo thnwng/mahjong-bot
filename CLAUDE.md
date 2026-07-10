@@ -15,7 +15,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 |---|---|
 | `app/` | Next.js 15 App Router shell. Styling = the **Halcyon design system**: `app/halcyon.css` (vendored tokens from `E:\Claude\halcyon-ds`) + `globals.css` (classes driven by Halcyon tokens/fonts/radii/shadows). Light/dark set on `<html data-theme>` — follows Telegram's colorScheme on a real launch, else the OS (`layout.tsx` boot script + `lib/telegram.ts`); accent `data-accent="slate"`. Re-vendor by re-concatenating the halcyon-ds token files into `app/halcyon.css`. |
 | `components/SGGame.tsx` | Tracker **router + home** (boot gates: username → game-types checklist; game-type dropdown; groups w/ balances + manual reorder; deep links; screen union) |
-| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join` (enter a group code → opening it JOINS you), `Setup` (create group — just a **name + usual-type**; roster + payouts come later), `Group` (**share link + ROSTER** (add placeholder names, "this is me" to claim a seat), debt counter, **Who-owes-who with a Settle-up button** (a party to a debt clears it — records a repayment), **All-time tally** (career win/loss + games, separate from outstanding debt), a Settled-up audit list, session banner, and `NewSession`: **one-page type → who's-playing subset → payouts**), `PayoutEditor` (the per-tai Zimo/Shoot table + scheme dropdown + bite/gang/self-draw-bonus — used at session start), `Play` (session balances, log, **record-action wizard** — Hu/Zimo/Gang/Yao with open-vs-concealed + the "X shoot Y" transfer selector), `SGTiles` (SG/Msia tile picker — "Tai calculator"; picker only, scoring not wired yet), `InfoDot` (tap-to-reveal "?" help bubbles), `SGTaiHands` (standalone **winning-hands tai reference**: every scoring hand type shown schematically with tile art + editable tai; Special & limit section defaults to **限+1**; reachable from the home or `?type=sgtai`), `GroupSettings` (**per-group scoring menu** — a gear on each home row **and** a button inside the group page; its Scoring subtab sets each hand's tai via a **0–10 / Max tai 限 / Special 限+1 dropdown**, stored per group **code** in `localStorage` for now → a later step moves it onto the group row so it syncs to members), `taiCatalog.tsx` (the shared hand catalog + defaults + `TAI_OPTIONS` — one source of truth for both tai pages) |
+| `components/sg/` | Screens: `Identity` (username + game-types gates), `Settings`, `Join` (enter a group code → opening it JOINS you), `Setup` (create group — just a **name + usual-type**; roster + payouts come later), `Group` (**share link + ROSTER** (add placeholder names, "this is me" to claim a seat), debt counter, **Who-owes-who with a Settle-up button** (a party to a debt clears it — records a repayment), **All-time tally** (career win/loss + games, separate from outstanding debt), a Settled-up audit list, session banner, and `NewSession`: **one-page type → who's-playing subset → payouts**), `PayoutEditor` (the per-tai Zimo/Shoot table + scheme dropdown + bite/gang/self-draw-bonus — used at session start), `Play` (session balances, log, **record-action wizard** — Hu/Zimo/Gang/Yao with open-vs-concealed + the "X shoot Y" transfer selector), `SGTiles` (SG/Msia tile picker — "Tai calculator"; picker only, scoring not wired yet), `InfoDot` (tap-to-reveal "?" help bubbles), `SGTaiHands` (standalone **winning-hands tai reference**: every scoring hand type shown schematically with tile art + editable tai; Special & limit section defaults to **限+1**; reachable from the home or `?type=sgtai`), `GroupSettings` (**per-group scoring menu** — a gear on each home row **and** a button inside the group page; its Scoring subtab sets each hand's tai via a **0–10 / Max tai 限 / Special 限+1 dropdown**, stored **on the group** (`trackers.tai_scores`, migration 0006) so every member shares it — loaded read-only via `getState`, saved with an explicit **Save** button (`set-tai` op; one write, member-gated)), `taiCatalog.tsx` (the shared hand catalog + defaults + `TAI_OPTIONS` — one source of truth for both tai pages) |
 | `components/RiichiCalculator.tsx`, `TilesMode.tsx`, `ResultCard.tsx` | Riichi calculator UI. `TilesMode` renders real tile art from `public/tiles/jp/` (basePath-prefixed) |
 | `public/tiles/` | Tile PNG art (downscaled): `jp/` (Riichi), `sg/` (Singaporean, incl. flowers/seasons). Filenames = engine code + set prefix (jp1C.png, sgEW.png) |
 | `lib/telegram.ts` | The one Telegram wrapper (typed CDN script: haptics, back-button stack, closing confirmation). **Do not migrate to @telegram-apps/sdk-react** — see the decision comment at its top |
@@ -26,7 +26,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `supabase/functions/track/` | THE backend: validates Telegram initData (HMAC) on every call, service-role DB access |
 | `supabase/functions/bot/` | Webhook bot (@jpgmahjongbot): /start /open /help, group binding, fail-closed secret check |
 | `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |
-| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement); apply new ones in the SQL editor BEFORE the matching function deploys |
+| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement; 0006 = `trackers.tai_scores` jsonb for per-group winning-hand scoring); apply new ones in the SQL editor BEFORE the matching function deploys |
 
 ## Branch topology (as of 2026-07-10 — mirrors the Clabbers rule)
 
@@ -97,11 +97,21 @@ may record it, the amount is clamped to what's outstanding, and it nets out of
 - Standing DON'Ts (with triggers) are at the end of
   [IMPROVEMENT-PLAN.md](IMPROVEMENT-PLAN.md): no state library, no Supabase
   Realtime, no sdk-react migration, no UI/E2E tests.
+- **OFFLINE dev mode** (folded in from the retired `mahjong-web-offline` fork,
+  2026-07-10): `NEXT_PUBLIC_OFFLINE=true` makes the app run entirely in the
+  browser with no Telegram/Supabase — `lib/sg/remote.ts` routes every `call()`
+  to `lib/sg/localBackend.ts` (a localStorage backend) and `components/DevBar.tsx`
+  switches fake players. It's **dev-only**: `OFFLINE` is a build-time constant
+  that's false in production (CI never sets `NEXT_PUBLIC_OFFLINE`), and the
+  backend/DevBar/`RiichiGame` are lazy-loaded so they're NOT in the production
+  bundle. The `?type=riichigame` route (a WIP Riichi *game* tracker,
+  `components/riichi/RiichiGame.tsx` + `lib/riichi/game.ts`) is OFFLINE-gated.
 
 ## Run locally
 
 ```
 npm install
-npm run dev    # http://localhost:3000 — tracker needs Telegram; Riichi calc works anywhere
-npm test       # payout + scoring engine tests
+npm run dev                         # http://localhost:3000 — tracker needs Telegram; Riichi calc works anywhere
+$env:NEXT_PUBLIC_OFFLINE='true'; npm run dev   # browser-testable: local backend + DevBar, no Telegram (dev only)
+npm test                            # payout + Riichi + scoring engine tests
 ```

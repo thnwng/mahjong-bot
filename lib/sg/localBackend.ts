@@ -32,7 +32,7 @@ export const OFFLINE_USERS = [
 // A tracker's `players` is now the full ROSTER of names (placeholders + claimed),
 // which can hold more names than a single table seats — each session records the
 // 3-4 who actually played. A member's `name` is null until they claim a seat.
-type Tracker = { id: string; code: string; game: string; name: string; players: string[]; bases: PayoutConfig; tg_chat_id: number | null; default_type: string; created_at: string };
+type Tracker = { id: string; code: string; game: string; name: string; players: string[]; bases: PayoutConfig; tg_chat_id: number | null; default_type: string; tai_scores?: Record<string, string> | null; created_at: string };
 type Member = { tracker_id: string; user_id: number; name: string | null; created_at: string };
 type Meta = Record<string, unknown> | null;
 type Action = { id: string; tracker_id: string; session_id: string | null; actioner: string; summary: string; transfers: Transfer[]; meta: Meta; created_at: string };
@@ -373,6 +373,22 @@ export async function localCall<T>(op: string, payload: Record<string, unknown>)
       transfers: [{ payer: to, payee: from, amount: amt }],
       meta: { k: "settle", from, to }, created_at: nowIso(),
     });
+    return out(groupState(db, tracker, uid));
+  }
+
+  if (op === "set-tai") {
+    // Save this group's winning-hand tai scoring (shared by all members),
+    // mirroring the track function's set-tai op.
+    const tracker = byCode();
+    const info = seatInfo(db, tracker.id, uid);
+    if (!info.isMember) err("join the group first");
+    const raw = payload.scores;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) err("bad scoring values");
+    const scores: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 64)) {
+      if (typeof k === "string" && k.length && k.length <= 40) scores[k] = String(v).slice(0, 8);
+    }
+    tracker.tai_scores = scores;
     return out(groupState(db, tracker, uid));
   }
 

@@ -26,6 +26,7 @@ export interface Tracker {
   players: string[];
   bases: PayoutConfig;
   default_type?: string; // what this group usually plays ('sg4' | 'my3')
+  tai_scores?: Record<string, string> | null; // per-group winning-hand tai; null/absent = app defaults
 }
 
 // One sitting at the table. Money tallies per session; ended sessions feed the
@@ -194,6 +195,11 @@ export const endSession = (code: string) => call<TrackerState>("end-session", { 
  *  counts toward the all-time win/loss tally. */
 export const settleDebt = (code: string, from: string, to: string, amount: number) =>
   call<TrackerState>("settle", { code, from, to, amount });
+
+// Save this group's winning-hand tai scoring (shared by every member). Returns
+// the full group state (the tracker now carries `tai_scores`).
+export const setGroupTai = (code: string, scores: Record<string, string>) =>
+  call<TrackerState>("set-tai", { code, scores });
 
 /** Rename your own seat in a group (your per-group display name). Rewrites the
  *  roster + past transfers server-side so balances stay correct. Throws "that

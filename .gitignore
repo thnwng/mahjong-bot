@@ -4,7 +4,12 @@
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
-.env*.local
+# Ignore ALL env files (not just *.local): a committed .env / .env.production is
+# auto-loaded by `next build`, and one containing NEXT_PUBLIC_OFFLINE=true would
+# silently route real-money writes to the localStorage dev backend in production.
+.env
+.env.*
+!.env.example
 
 # Matt Pocock skills - vendor content installed via `npx skills add mattpocock/skills`.
 # Update with `npx skills update`; never hand-edit these files. Not committed to this repo.

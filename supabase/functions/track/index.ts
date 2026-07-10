@@ -691,6 +691,35 @@ Deno.serve(async (req) => {
       return json(await groupState(sb, tracker, userId));
     }
 
+    if (op === "set-tai") {
+      // Save this group's winning-hand tai scoring (shared by every member). Any
+      // member may edit it; stored as a jsonb map { handId: value } on the tracker,
+      // returned to clients on the tracker object. Client values are sanitized (a
+      // shared record on a money app): string->string, short keys/values, capped
+      // count, so a hostile client can't bloat the row or inject huge blobs.
+      // CONCURRENCY: last-writer-wins — the update is a full-column overwrite with
+      // no version guard, so two members saving scoring at the same time, the
+      // later save silently wins. Accepted at hobby scale (scoring is edited rarely,
+      // unlike money actions). Adopt optimistic concurrency (an updated_at/version
+      // predicate returning 409, like start-session) only if real conflicts appear.
+      if (!userId) return json({ error: "no account" }, 401);
+      const code = String((body as { code?: string }).code || "").toUpperCase();
+      const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();
+      if (e1 || !tracker) return json({ error: "group not found" }, 404);
+      const info = await seatInfo(sb, tracker.id, userId);
+      if (!info.isMember) return json({ error: "join the group first" }, 403);
+      const raw = (body as unknown as { scores?: unknown }).scores;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return json({ error: "bad scoring values" }, 400);
+      const scores: Record<string, string> = {};
+      for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 64)) {
+        if (typeof k === "string" && k.length && k.length <= 40) scores[k] = String(v).slice(0, 8);
+      }
+      const { error: ue } = await sb.from("trackers").update({ tai_scores: scores }).eq("id", tracker.id);
+      if (ue) throw ue;
+      const { data: t2 } = await sb.from("trackers").select().eq("code", code).single();
+      return json(await groupState(sb, t2 || tracker, userId));
+    }
+
     if (op === "state" || op === "action") {
       const code = String((body as { code?: string }).code || "").toUpperCase();
       const { data: tracker, error: e1 } = await sb.from("trackers").select().eq("code", code).single();

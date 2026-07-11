@@ -784,17 +784,43 @@ Deno.serve(async (req) => {
       if (!info.me) return json({ error: "claim a seat in the group first" }, 403);
       const { data: s } = await sb.from("sessions").select("id, ended_at").eq("id", sid).eq("tracker_id", tracker.id).maybeSingle();
       if (!s) return json({ error: "session not found" }, 404);
-      // Settlements (repayments) are session-agnostic (session_id null). Deleting
-      // an ENDED session whose debts were already settled would remove the game
-      // rows but leave the settlement, resurrecting a phantom REVERSE debt. Refuse
-      // once any repayment exists (undo settlements first). The ACTIVE session's
-      // actions never reach the debt tally, so it's always safe to cancel.
-      if ((s as { ended_at?: string | null }).ended_at) {
-        const { data: settled } = await sb.from("actions").select("id").eq("tracker_id", tracker.id).eq("meta->>k", "settle").limit(1);
-        if (settled && settled.length) return json({ error: "can't delete an ended session after a debt has been settled — undo the settlements first" }, 409);
+      if (!(s as { ended_at?: string | null }).ended_at) {
+        // ACTIVE session: cancel it — its actions never reach the debt counter.
+        const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
+        if (de) throw de;
+      } else {
+        // ENDED session: its money froze into the debt counter. Rule: the group's
+        // debts must be SETTLED first ("settle the debts first"). Then, because
+        // settlements are session-agnostic (session_id null), deleting this
+        // session's game rows alone would orphan them into phantom debt — so we
+        // also clear the settlements, but ONLY when every OTHER session's games
+        // net to zero on their own (else clearing settlements would double-charge
+        // their already-paid debts). Anything more tangled is refused.
+        const rows = await allRows<{ session_id: string | null; transfers: Array<{ payer: string; payee: string; amount: number }>; meta: Record<string, unknown> | null; created_at: string }>(
+          (from, to) => sb.from("actions").select("session_id, transfers, meta, created_at").eq("tracker_id", tracker.id).order("created_at", { ascending: true }).range(from, to),
+        );
+        const live = await activeSession(sb, tracker.id);
+        const liveId = live ? live.id : null;
+        const isSettleRow = (a: { meta: Record<string, unknown> | null }) => !!a.meta && (a.meta as { k?: string }).k === "settle";
+        const debts: Record<string, number> = {};
+        const post: Record<string, number> = {};
+        for (const a of rows) {
+          if (liveId && a.session_id === liveId) continue; // outstanding = ended sessions + settlements
+          for (const tr of a.transfers || []) { debts[tr.payer] = (debts[tr.payer] || 0) - tr.amount; debts[tr.payee] = (debts[tr.payee] || 0) + tr.amount; }
+          if (a.session_id === sid || isSettleRow(a)) continue; // post excludes this session's games + all settlements
+          for (const tr of a.transfers || []) { post[tr.payer] = (post[tr.payer] || 0) - tr.amount; post[tr.payee] = (post[tr.payee] || 0) + tr.amount; }
+        }
+        if (Object.values(debts).some((v) => Math.abs(v) > 0.004)) {
+          return json({ error: "settle the debts first — a session can only be deleted once its money is squared up" }, 409);
+        }
+        if (Object.values(post).some((v) => Math.abs(v) > 0.004)) {
+          return json({ error: "can't delete this cleanly — another session's money is still in play; settle or delete those first" }, 409);
+        }
+        const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
+        if (de) throw de;
+        const { error: se2 } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("meta->>k", "settle");
+        if (se2) throw se2;
       }
-      const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
-      if (de) throw de;
       const { error: xe } = await sb.from("sessions").delete().eq("id", sid).eq("tracker_id", tracker.id);
       if (xe) throw xe;
       return json(await groupState(sb, tracker, userId));

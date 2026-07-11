@@ -104,6 +104,7 @@ export function GroupScreen({
   const [renameVal, setRenameVal] = useState(t.name || "");
   const [copied, setCopied] = useState(false);
   const [confirmDelSess, setConfirmDelSess] = useState<string | null>(null);
+  const [delNotice, setDelNotice] = useState(false);
 
   const run = async (fn: () => Promise<TrackerState>) => {
     setWork(true); setGErr("");
@@ -179,8 +180,11 @@ export function GroupScreen({
     run(() => settleDebt(t.code, from, to, amount));
   };
 
-  const doDeleteSession = (id: string) => {
-    if (confirmDelSess !== id) { setConfirmDelSess(id); haptic("warning"); return; }
+  const doDeleteSession = (id: string, ended: boolean) => {
+    // Rule: an ended session can only be deleted once the group's money is
+    // squared up. Advise settling first instead of arming the delete.
+    if (ended && anyDebt) { setDelNotice(true); setConfirmDelSess(null); haptic("warning"); return; }
+    if (confirmDelSess !== id) { setConfirmDelSess(id); setDelNotice(false); haptic("warning"); return; }
     setConfirmDelSess(null);
     run(() => deleteSession(t.code, id));
   };
@@ -301,7 +305,7 @@ export function GroupScreen({
               <div className="line meta">Started by {session.started_by || "?"} · auto-ends in ~{hoursLeft(session.started_at)}h</div>
               <div className="row" style={{ marginTop: 6, alignItems: "center" }}>
                 <button className="chip on" disabled={busy} onClick={() => { haptic("light"); onEnterSession(); }}>Enter session</button>
-                <button className="icon-btn danger" aria-label="Delete running session" disabled={work || busy} onClick={() => doDeleteSession(session.id)}><IconTrash /></button>
+                <button className="icon-btn danger" aria-label="Delete running session" disabled={work || busy} onClick={() => doDeleteSession(session.id, false)}><IconTrash /></button>
               </div>
               {confirmDelSess === session.id && <p className="warn">Delete the running session and its money? Tap the trash again to confirm.</p>}
             </div>
@@ -326,13 +330,14 @@ export function GroupScreen({
                     {netLine(s.net) && <div className="log" style={{ marginTop: 2 }}>{netLine(s.net)}</div>}
                   </span>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button className="icon-btn danger" aria-label={`Delete session ${s.name || sessDate(s.started_at)}`} disabled={work || busy} onClick={() => doDeleteSession(s.id)}><IconTrash /></button>
+                    <button className="icon-btn danger" aria-label={`Delete session ${s.name || sessDate(s.started_at)}`} disabled={work || busy} onClick={() => doDeleteSession(s.id, true)}><IconTrash /></button>
                   </span>
                 </div>
               ))}
             </div>
           )}
-          {confirmDelSess && confirmDelSess !== session?.id && <p className="warn">Delete this session and its money (it&apos;ll rebalance the debts)? Tap the trash again to confirm.</p>}
+          {delNotice && <p className="warn">Settle the debts first — a session can only be deleted once the group&apos;s money is squared up (see the <strong>$</strong> tab).</p>}
+          {confirmDelSess && confirmDelSess !== session?.id && <p className="warn">Delete this session? It&apos;ll also clear the settled-up records tied to it. Tap the trash again to confirm.</p>}
         </>
       ) : (
         <>

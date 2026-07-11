@@ -97,12 +97,17 @@ may record it, the amount is clamped to what's outstanding, and it nets out of
 - **Destructive money ops (2026-07-11 group rebuild)**: `remove-player`,
   `delete-session`, `settle-all` require a SEATED member (`info.me`, not just
   isMember) + money-safety guards — remove-player rejects a name with a non-zero
-  balance or one in the running session; **delete-session refuses an ENDED
-  session once any repayment (`meta.k='settle'`) exists**, because settlements
-  are session-agnostic (`session_id` null) and deleting the game rows would
-  otherwise orphan the settlement into a phantom REVERSE debt (adversarial-review
-  finding, 2026-07-11). The LINK-FIRST peer-trust model still holds: any seated
-  member can run these — a documented product decision, not an owner role.
+  balance or one in the running session; **delete-session (as of 2026-07-11)
+  refuses an ENDED session while the group's `debts` are non-zero** (a
+  "settle the debts first" 409; the client shows a notice instead of arming the
+  trash). An ACTIVE session just cancels (its actions never reached the debt
+  counter). Once debts are settled, deleting an ended session ALSO clears the
+  session-agnostic settlements (`meta.k='settle'`, `session_id` null) so they
+  can't orphan into a phantom REVERSE debt — but only when every OTHER session's
+  games net to zero on their own (a post-delete check; else it refuses with
+  "another session's money is still in play", since settlements aren't tagged by
+  session). The LINK-FIRST peer-trust model still holds: any seated member can
+  run these — a documented product decision, not an owner role.
 - Standing DON'Ts (with triggers) are at the end of
   [IMPROVEMENT-PLAN.md](IMPROVEMENT-PLAN.md): no state library, no Supabase
   Realtime, no sdk-react migration, no UI/E2E tests.

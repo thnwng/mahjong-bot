@@ -789,37 +789,21 @@ Deno.serve(async (req) => {
         const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
         if (de) throw de;
       } else {
-        // ENDED session: its money froze into the debt counter. Rule: the group's
-        // debts must be SETTLED first ("settle the debts first"). Then, because
-        // settlements are session-agnostic (session_id null), deleting this
-        // session's game rows alone would orphan them into phantom debt — so we
-        // also clear the settlements, but ONLY when every OTHER session's games
-        // net to zero on their own (else clearing settlements would double-charge
-        // their already-paid debts). Anything more tangled is refused.
-        const rows = await allRows<{ session_id: string | null; transfers: Array<{ payer: string; payee: string; amount: number }>; meta: Record<string, unknown> | null; created_at: string }>(
-          (from, to) => sb.from("actions").select("session_id, transfers, meta, created_at").eq("tracker_id", tracker.id).order("created_at", { ascending: true }).range(from, to),
-        );
-        const live = await activeSession(sb, tracker.id);
-        const liveId = live ? live.id : null;
-        const isSettleRow = (a: { meta: Record<string, unknown> | null }) => !!a.meta && (a.meta as { k?: string }).k === "settle";
-        const debts: Record<string, number> = {};
-        const post: Record<string, number> = {};
-        for (const a of rows) {
-          if (liveId && a.session_id === liveId) continue; // outstanding = ended sessions + settlements
-          for (const tr of a.transfers || []) { debts[tr.payer] = (debts[tr.payer] || 0) - tr.amount; debts[tr.payee] = (debts[tr.payee] || 0) + tr.amount; }
-          if (a.session_id === sid || isSettleRow(a)) continue; // post excludes this session's games + all settlements
-          for (const tr of a.transfers || []) { post[tr.payer] = (post[tr.payer] || 0) - tr.amount; post[tr.payee] = (post[tr.payee] || 0) + tr.amount; }
-        }
-        if (Object.values(debts).some((v) => Math.abs(v) > 0.004)) {
+        // ENDED session: its money is frozen into the debt counter. Rule: refuse
+        // while the group still owes money ("settle the debts first"; reuse the
+        // canonical groupState debts so the gate matches what the app shows).
+        // Once squared up, delete ONLY this session's game rows — NEVER the
+        // session-agnostic settlements. (A prior version also wiped every
+        // settlement, guarded by a post-check; that could erase a real debt and
+        // lock offsetting sessions permanently — 2026-07-11 review. Deleting a
+        // settled session therefore leaves a correct refund owed; making it
+        // vanish cleanly is the pending settlement-tagging fix.)
+        const st = await groupState(sb, tracker, userId);
+        if (Object.values(st.debts as Record<string, number>).some((v) => Math.abs(v) > 0.004)) {
           return json({ error: "settle the debts first — a session can only be deleted once its money is squared up" }, 409);
-        }
-        if (Object.values(post).some((v) => Math.abs(v) > 0.004)) {
-          return json({ error: "can't delete this cleanly — another session's money is still in play; settle or delete those first" }, 409);
         }
         const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
         if (de) throw de;
-        const { error: se2 } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("meta->>k", "settle");
-        if (se2) throw se2;
       }
       const { error: xe } = await sb.from("sessions").delete().eq("id", sid).eq("tracker_id", tracker.id);
       if (xe) throw xe;

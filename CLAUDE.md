@@ -99,15 +99,20 @@ may record it, the amount is clamped to what's outstanding, and it nets out of
   isMember) + money-safety guards — remove-player rejects a name with a non-zero
   balance or one in the running session; **delete-session (as of 2026-07-11)
   refuses an ENDED session while the group's `debts` are non-zero** (a
-  "settle the debts first" 409; the client shows a notice instead of arming the
-  trash). An ACTIVE session just cancels (its actions never reached the debt
-  counter). Once debts are settled, deleting an ended session ALSO clears the
-  session-agnostic settlements (`meta.k='settle'`, `session_id` null) so they
-  can't orphan into a phantom REVERSE debt — but only when every OTHER session's
-  games net to zero on their own (a post-delete check; else it refuses with
-  "another session's money is still in play", since settlements aren't tagged by
-  session). The LINK-FIRST peer-trust model still holds: any seated member can
-  run these — a documented product decision, not an owner role.
+  "settle the debts first" 409, gated on the canonical `groupState().debts`; the
+  client shows a notice instead of arming the trash). An ACTIVE session just
+  cancels (its actions never reached the debt counter). Once squared up, delete
+  removes **only this session's game rows — NEVER the session-agnostic
+  settlements** (`meta.k='settle'`, `session_id` null). A brief attempt (same
+  day) to also wipe settlements, guarded by a `post==0` post-check, was REVERTED
+  after an adversarial review found it could **erase a real debt** (two other
+  sessions offsetting, one settled/one not → wiping all settlements masked the
+  unpaid one) and **permanently lock offsetting sessions** as undeletable. So a
+  settled session now leaves a correct **refund owed** on delete; making it
+  vanish cleanly needs per-session settlement tagging (**pending full fix** — a
+  migration). Regression-tested in `lib/sg/localBackend.delete.test.ts`. The
+  LINK-FIRST peer-trust model still holds: any seated member can run these — a
+  documented product decision, not an owner role.
 - Standing DON'Ts (with triggers) are at the end of
   [IMPROVEMENT-PLAN.md](IMPROVEMENT-PLAN.md): no state library, no Supabase
   Realtime, no sdk-react migration, no UI/E2E tests.

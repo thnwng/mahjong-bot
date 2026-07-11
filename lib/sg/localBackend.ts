@@ -445,23 +445,15 @@ export async function localCall<T>(op: string, payload: Record<string, unknown>)
       // active session: cancel it (its actions never reached the debt counter)
       db.actions = db.actions.filter((a) => !(a.tracker_id === tracker.id && a.session_id === sid));
     } else {
-      // ended: debts must be settled first, then also clear the session-agnostic
-      // settlements — but only when other sessions' games net to zero on their own
-      // (else clearing settlements would double-charge their paid debts).
-      const live = activeSession(db, tracker.id);
-      const liveId = live ? live.id : null;
-      const debts: Record<string, number> = {};
-      const post: Record<string, number> = {};
-      for (const a of db.actions) {
-        if (a.tracker_id !== tracker.id) continue;
-        if (liveId && a.session_id === liveId) continue;
-        for (const tr of a.transfers || []) { debts[tr.payer] = (debts[tr.payer] || 0) - tr.amount; debts[tr.payee] = (debts[tr.payee] || 0) + tr.amount; }
-        if (a.session_id === sid || isSettle(a)) continue;
-        for (const tr of a.transfers || []) { post[tr.payer] = (post[tr.payer] || 0) - tr.amount; post[tr.payee] = (post[tr.payee] || 0) + tr.amount; }
-      }
-      if (Object.values(debts).some((v) => Math.abs(v) > 0.004)) err("settle the debts first — a session can only be deleted once its money is squared up");
-      if (Object.values(post).some((v) => Math.abs(v) > 0.004)) err("can't delete this cleanly — another session's money is still in play; settle or delete those first");
-      db.actions = db.actions.filter((a) => !(a.tracker_id === tracker.id && (a.session_id === sid || isSettle(a))));
+      // ended: refuse while the group still owes money ("settle the debts first",
+      // reusing the canonical groupState debts), then delete ONLY this session's
+      // games — NEVER the session-agnostic settlements. Wiping settlements could
+      // erase a real debt and lock offsetting sessions (2026-07-11 review); a
+      // settled session left on delete correctly shows a refund owed. Mirror of
+      // the server op.
+      const st = groupState(db, tracker, uid);
+      if (Object.values(st.debts as Record<string, number>).some((v) => Math.abs(v) > 0.004)) err("settle the debts first — a session can only be deleted once its money is squared up");
+      db.actions = db.actions.filter((a) => !(a.tracker_id === tracker.id && a.session_id === sid));
     }
     db.sessions = db.sessions.filter((x) => x.id !== sid);
     return out(groupState(db, tracker, uid));

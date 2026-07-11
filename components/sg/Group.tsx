@@ -189,6 +189,10 @@ export function GroupScreen({
     run(() => deleteSession(t.code, id));
   };
 
+  // Switching tabs disarms any pending delete — a stale two-tap arm or notice
+  // must not survive navigation (it wouldn't name which session it targets).
+  const goTab = (x: "history" | "money") => { setTab(x); setConfirmDelSess(null); setDelNotice(false); };
+
   const netLine = (n: Record<string, number>) => Object.entries(n)
     .filter(([, v]) => Math.abs(v) > 0.004)
     .sort((a, b) => b[1] - a[1])
@@ -289,8 +293,8 @@ export function GroupScreen({
 
       {/* Tabbed subsection: Sessions | $ */}
       <div className="tabs">
-        <button type="button" className={"tab" + (tab === "history" ? " on" : "")} onClick={() => setTab("history")}>Sessions</button>
-        <button type="button" className={"tab" + (tab === "money" ? " on" : "")} onClick={() => setTab("money")}>$</button>
+        <button type="button" className={"tab" + (tab === "history" ? " on" : "")} onClick={() => goTab("history")}>Sessions</button>
+        <button type="button" className={"tab" + (tab === "money" ? " on" : "")} onClick={() => goTab("money")}>$</button>
       </div>
 
       {tab === "history" ? (
@@ -336,8 +340,8 @@ export function GroupScreen({
               ))}
             </div>
           )}
-          {delNotice && <p className="warn">Settle the debts first — a session can only be deleted once the group&apos;s money is squared up (see the <strong>$</strong> tab).</p>}
-          {confirmDelSess && confirmDelSess !== session?.id && <p className="warn">Delete this session? It&apos;ll also clear the settled-up records tied to it. Tap the trash again to confirm.</p>}
+          {delNotice && anyDebt && <p className="warn">Settle the debts first — a session can only be deleted once the group&apos;s money is squared up (see the <strong>$</strong> tab).</p>}
+          {confirmDelSess && confirmDelSess !== session?.id && <p className="warn">Delete this session? Tap the trash again to confirm.</p>}
         </>
       ) : (
         <>

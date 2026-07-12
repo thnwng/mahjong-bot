@@ -786,9 +786,28 @@ Deno.serve(async (req) => {
     }
 
     if (op === "delete-session") {
-      // Delete a session AND its money (a true undo). actions.session_id is ON
-      // DELETE SET NULL, so we delete the session's actions FIRST (else they'd
-      // survive as session-less debt), then the session row. Any member may.
+      // Delete a session and its money. Balances are derived from the action log,
+      // so this removes rows and lets them recompute. Decision flow:
+      //
+      //   ACTIVE session ......................... cancel: delete its game rows
+      //                                            (its money never reached debts).
+      //   ENDED session:
+      //   ├─ this session's OWN debt settled? ── YES → clean delete: remove EVERY
+      //   │                                        row tagged session_id=sid (games
+      //   │                                        AND its repayments) → nothing left.
+      //   ├─ else, is the WHOLE GROUP square? ── YES → delete anyway (offsetting or
+      //   │                                        legacy); any real debt from OTHER
+      //   │                                        sessions stays visible (correct).
+      //   └─ else ─────────────────────────────── REFUSE 409 "settle this session's
+      //                                            debts first" (client shows it
+      //                                            inline; settle it in $ then delete).
+      //
+      // "settled" = this session's `outstanding` (its games + its own repayments,
+      // all carrying session_id) nets to zero. Deleting by session_id takes a
+      // session's repayments with it, so no session-agnostic settlement is ever
+      // orphaned (the 2026-07-11 corruption). actions.session_id is ON DELETE SET
+      // NULL, so delete the actions FIRST, then the session row. Any SEATED member
+      // may (LINK-FIRST peer trust).
       if (!userId) return json({ error: "no account" }, 401);
       const code = String((body as { code?: string }).code || "").toUpperCase();
       const sid = String((body as { sessionId?: string }).sessionId || "");
@@ -805,15 +824,9 @@ Deno.serve(async (req) => {
         const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
         if (de) throw de;
       } else {
-        // ENDED session: allow once THIS session is squared up (its games + its
-        // own repayments net to zero — 0008 per-session settle), OR the whole
-        // group is square (legacy fallback for pre-0008 aggregate repayments).
-        // Then delete every row tagged with this session — games AND its own
-        // repayments together (both carry session_id) — so nothing is orphaned.
-        // Other sessions' and legacy session-agnostic rows are untouched. (A
-        // brief prior version wiped ALL settlements guarded by an aggregate
-        // post-check; that could erase a real debt / lock offsetting sessions —
-        // 2026-07-11 review.)
+        // ENDED session (see the flowchart above): gate on this session's own
+        // outstanding, with a whole-group-square fallback, then delete every row
+        // tagged with it (games + its own repayments).
         const st = await groupState(sb, tracker, userId);
         const sess = (st.sessions as Array<{ id: string; outstanding?: Record<string, number> }>).find((x) => x.id === sid);
         const sessOwed = Object.values(sess?.outstanding || {}).some((v) => Math.abs(v) > 0.004);

@@ -459,12 +459,10 @@ export async function localCall<T>(op: string, payload: Record<string, unknown>)
       // active session: cancel it (its actions never reached the debt counter)
       db.actions = db.actions.filter((a) => !(a.tracker_id === tracker.id && a.session_id === sid));
     } else {
-      // ended: allow once THIS session is squared up (its games + its own
-      // repayments net to zero), OR the whole group is square (legacy fallback for
-      // pre-0008 aggregate repayments). Then delete every row tagged with this
-      // session — games AND its own repayments together (both carry session_id) —
-      // so nothing is orphaned. Never touches other sessions' or legacy
-      // session-agnostic rows. Mirror of the server op.
+      // ended (see the delete-session flowchart on the server op in
+      // supabase/functions/track/index.ts): gate on this session's own outstanding,
+      // with a whole-group-square fallback, then delete every row tagged with it
+      // (games + its own repayments). Mirror of the server op.
       const st = groupState(db, tracker, uid);
       const sess = st.sessions.find((x) => x.id === sid);
       const sessOwed = Object.values((sess?.outstanding || {}) as Record<string, number>).some((v) => Math.abs(v) > 0.004);

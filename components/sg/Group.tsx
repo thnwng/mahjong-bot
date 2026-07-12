@@ -104,7 +104,7 @@ export function GroupScreen({
   const [renameVal, setRenameVal] = useState(t.name || "");
   const [copied, setCopied] = useState(false);
   const [confirmDelSess, setConfirmDelSess] = useState<string | null>(null);
-  const [delNotice, setDelNotice] = useState(false);
+  const [delNotice, setDelNotice] = useState<string | null>(null); // session id whose delete was blocked
 
   const run = async (fn: () => Promise<TrackerState>) => {
     setWork(true); setGErr("");
@@ -156,7 +156,6 @@ export function GroupScreen({
 
   const net = roster.map((p) => ({ p, v: debts[p] || 0 }));
   const anyDebt = net.some((x) => Math.abs(x.v) > 0.004);
-  const suggestions = useMemo(() => settleUp(debts), [debts]);
   const enoughToStart = roster.length >= 3;
 
   const career = useMemo(() => {
@@ -171,27 +170,60 @@ export function GroupScreen({
   const settlements = state.settlements || [];
   const sessions = state.sessions || [];
   const endedSessions = sessions.filter((s) => s.ended_at);
+  // Per-session outstanding for the $ tab (0008): each ended session that still
+  // owes gets its own who-owes-who + settle buttons (settling clears just that
+  // session). `legacyResidual` = aggregate debt not tied to any session (pre-0008
+  // repayments), which settles the old aggregate way (no sessionId).
+  const sessionDebts = endedSessions
+    .map((s) => ({ s, pairs: settleUp(s.outstanding || {}) }))
+    .filter((x) => x.pairs.length > 0);
+  const legacyResidual = (() => {
+    const r: Record<string, number> = { ...debts };
+    for (const s of endedSessions) for (const [p, v] of Object.entries(s.outstanding || {})) r[p] = (r[p] || 0) - v;
+    return settleUp(r);
+  })();
 
   const [confirmSettle, setConfirmSettle] = useState<string | null>(null);
-  const doSettle = (from: string, to: string, amount: number) => {
-    const key = `${from}>${to}`;
+  const doSettle = (from: string, to: string, amount: number, sessionId?: string) => {
+    const key = `${sessionId || ""}:${from}>${to}`;
     if (confirmSettle !== key) { setConfirmSettle(key); haptic("warning"); return; }
     setConfirmSettle(null);
-    run(() => settleDebt(t.code, from, to, amount));
+    run(() => settleDebt(t.code, from, to, amount, sessionId));
+  };
+  // One who-owes-who row (+ Settle button if I'm a party). sessionId scopes the
+  // repayment to that session; omitted = legacy aggregate settle.
+  const payRow = (pair: { from: string; to: string; amount: number }, i: number, sessionId?: string) => {
+    const mineLine = me != null && (pair.from === me || pair.to === me);
+    const arming = confirmSettle === `${sessionId || ""}:${pair.from}>${pair.to}`;
+    return (
+      <div key={i} className="bal-row" style={{ alignItems: "center" }}>
+        <span>{pair.from} pays {pair.to} <strong>{money(pair.amount)}</strong></span>
+        {mineLine && (
+          <button className="chip" disabled={work || busy} onClick={() => doSettle(pair.from, pair.to, pair.amount, sessionId)}>
+            {arming ? "Tap again to settle" : "Settle up"}
+          </button>
+        )}
+      </div>
+    );
   };
 
   const doDeleteSession = (id: string, ended: boolean) => {
-    // Rule: an ended session can only be deleted once the group's money is
-    // squared up. Advise settling first instead of arming the delete.
-    if (ended && anyDebt) { setDelNotice(true); setConfirmDelSess(null); haptic("warning"); return; }
-    if (confirmDelSess !== id) { setConfirmDelSess(id); setDelNotice(false); haptic("warning"); return; }
+    // Rule: an ended session can only be deleted once ITS OWN debt is settled
+    // (unless the whole group is already square). Advise settling first — the
+    // notice renders next to this session, not off-screen.
+    if (ended) {
+      const s = endedSessions.find((x) => x.id === id);
+      const sessOwed = Object.values(s?.outstanding || {}).some((v) => Math.abs(v) > 0.004);
+      if (sessOwed && anyDebt) { setDelNotice(id); setConfirmDelSess(null); haptic("warning"); return; }
+    }
+    if (confirmDelSess !== id) { setConfirmDelSess(id); setDelNotice(null); haptic("warning"); return; }
     setConfirmDelSess(null);
     run(() => deleteSession(t.code, id));
   };
 
   // Switching tabs disarms any pending delete — a stale two-tap arm or notice
   // must not survive navigation (it wouldn't name which session it targets).
-  const goTab = (x: "history" | "money") => { setTab(x); setConfirmDelSess(null); setDelNotice(false); };
+  const goTab = (x: "history" | "money") => { setTab(x); setConfirmDelSess(null); setDelNotice(null); };
 
   const netLine = (n: Record<string, number>) => Object.entries(n)
     .filter(([, v]) => Math.abs(v) > 0.004)
@@ -326,22 +358,27 @@ export function GroupScreen({
             <p className="hint">No finished sessions yet.</p>
           ) : (
             <div className="balances">
-              {endedSessions.map((s: SessionSummary) => (
-                <div key={s.id} className="bal-row" style={{ alignItems: "flex-start" }}>
-                  <span style={{ flex: 1 }}>
-                    <strong>{s.name || sessDate(s.started_at)}</strong>
-                    <span className="meta"> · {(s.players || []).join(", ")}</span>
-                    {netLine(s.net) && <div className="log" style={{ marginTop: 2 }}>{netLine(s.net)}</div>}
-                  </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button className="icon-btn danger" aria-label={`Delete session ${s.name || sessDate(s.started_at)}`} disabled={work || busy} onClick={() => doDeleteSession(s.id, true)}><IconTrash /></button>
-                  </span>
-                </div>
-              ))}
+              {endedSessions.map((s: SessionSummary) => {
+                const sessOwed = Object.values(s.outstanding || {}).some((v) => Math.abs(v) > 0.004);
+                return (
+                  <div key={s.id}>
+                    <div className="bal-row" style={{ alignItems: "flex-start" }}>
+                      <span style={{ flex: 1 }}>
+                        <strong>{s.name || sessDate(s.started_at)}</strong>
+                        <span className="meta"> · {(s.players || []).join(", ")}</span>
+                        {netLine(s.net) && <div className="log" style={{ marginTop: 2 }}>{netLine(s.net)}</div>}
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <button className="icon-btn danger" aria-label={`Delete session ${s.name || sessDate(s.started_at)}`} disabled={work || busy} onClick={() => doDeleteSession(s.id, true)}><IconTrash /></button>
+                      </span>
+                    </div>
+                    {delNotice === s.id && sessOwed && <p className="warn">Settle this session&apos;s debt first — see the <strong>$</strong> tab.</p>}
+                    {confirmDelSess === s.id && <p className="warn">Delete this session? Tap the trash again to confirm.</p>}
+                  </div>
+                );
+              })}
             </div>
           )}
-          {delNotice && anyDebt && <p className="warn">Settle the debts first — a session can only be deleted once the group&apos;s money is squared up (see the <strong>$</strong> tab).</p>}
-          {confirmDelSess && confirmDelSess !== session?.id && <p className="warn">Delete this session? Tap the trash again to confirm.</p>}
         </>
       ) : (
         <>
@@ -358,28 +395,20 @@ export function GroupScreen({
                   </div>
                 ))}
               </div>
-              {suggestions.length > 0 && (
-                <>
-                  <h2>Who owes who</h2>
-                  <div className="balances">
-                    {suggestions.map((s, i) => {
-                      const mineLine = me != null && (s.from === me || s.to === me);
-                      const arming = confirmSettle === `${s.from}>${s.to}`;
-                      return (
-                        <div key={i} className="bal-row" style={{ alignItems: "center" }}>
-                          <span>{s.from} pays {s.to} <strong>{money(s.amount)}</strong></span>
-                          {mineLine && (
-                            <button className="chip" disabled={work || busy} onClick={() => doSettle(s.from, s.to, s.amount)}>
-                              {arming ? "Tap again to settle" : "Settle up"}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {!me && <p className="fine">Tap &ldquo;This is me&rdquo; on your name above to settle debts you&apos;re part of.</p>}
-                </>
+              <h2>Who owes who</h2>
+              {sessionDebts.map(({ s, pairs }) => (
+                <div key={s.id} style={{ marginBottom: 8 }}>
+                  <div className="line meta" style={{ marginBottom: 2 }}>{s.name || sessDate(s.started_at)}</div>
+                  <div className="balances">{pairs.map((pair, i) => payRow(pair, i, s.id))}</div>
+                </div>
+              ))}
+              {legacyResidual.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div className="line meta" style={{ marginBottom: 2 }}>Earlier</div>
+                  <div className="balances">{legacyResidual.map((pair, i) => payRow(pair, i))}</div>
+                </div>
               )}
+              {!me && <p className="fine">Tap &ldquo;This is me&rdquo; on your name above to settle debts you&apos;re part of.</p>}
             </>
           )}
 

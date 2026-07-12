@@ -126,10 +126,16 @@ function groupState(db: DB, tracker: Tracker, uid: number) {
       }
     }
   }
-  // Games played + full session history (newest first), each with its own net.
+  // Per session: GAME net (for the history display) and OUTSTANDING (games +
+  // that session's own repayments — session-tagged settlements — for the $ tab's
+  // per-session settle). Legacy null-session settlements sit in neither.
   const netBySession: Record<string, Record<string, number>> = {};
+  const outBySession: Record<string, Record<string, number>> = {};
   for (const a of rows) {
     if (!a.session_id) continue;
+    const ob = outBySession[a.session_id] || (outBySession[a.session_id] = {});
+    for (const t of a.transfers || []) { ob[t.payer] = (ob[t.payer] || 0) - t.amount; ob[t.payee] = (ob[t.payee] || 0) + t.amount; }
+    if (isSettle(a)) continue;
     const nb = netBySession[a.session_id] || (netBySession[a.session_id] = {});
     for (const t of a.transfers || []) { nb[t.payer] = (nb[t.payer] || 0) - t.amount; nb[t.payee] = (nb[t.payee] || 0) + t.amount; }
   }
@@ -139,7 +145,7 @@ function groupState(db: DB, tracker: Tracker, uid: number) {
     .sort((a, b) => b.started_at.localeCompare(a.started_at))
     .map((s) => {
       if (s.ended_at) for (const p of s.players || []) games[p] = (games[p] || 0) + 1;
-      return { id: s.id, name: s.name ?? null, players: s.players || [], settle: s.settle, started_by: s.started_by, started_at: s.started_at, ended_at: s.ended_at, net: netBySession[s.id] || {} };
+      return { id: s.id, name: s.name ?? null, players: s.players || [], settle: s.settle, started_by: s.started_by, started_at: s.started_at, ended_at: s.ended_at, net: netBySession[s.id] || {}, outstanding: outBySession[s.id] || {} };
     });
   // A short audit trail of settlements so a repayment isn't invisible money.
   const settlements = rows
@@ -382,22 +388,30 @@ export async function localCall<T>(op: string, payload: Record<string, unknown>)
     const from = String(payload.from || "");   // the debtor (owes money)
     const to = String(payload.to || "");        // the creditor (is owed money)
     const amount = Number(payload.amount);
+    const sessionId = String(payload.sessionId || ""); // which session's debt (per-session settle)
     if (!from || !to || from === to) err("bad settlement");
     if (info.me !== from && info.me !== to) err("you can only settle a debt you're part of");
-    // Outstanding net so far (ended sessions + prior settlements; the live
-    // session is excluded — you settle frozen debts, not an in-play game).
-    const session = activeSession(db, tracker.id);
+    if (!(amount > 0)) err("amount must be positive");
+    // Outstanding net to clamp against. Per-session (sessionId given): only that
+    // ended session's rows. Legacy fallback (no sessionId): every ended session's,
+    // excluding the live one. The repayment carries session_id so deleting the
+    // session later removes it cleanly.
+    const live = activeSession(db, tracker.id);
+    if (sessionId) {
+      const sess = db.sessions.find((x) => x.id === sessionId && x.tracker_id === tracker.id);
+      if (!sess) err("session not found");
+      if (!sess!.ended_at) err("end the session before settling it");
+    }
     const net: Record<string, number> = {};
     for (const a of db.actions.filter((x) => x.tracker_id === tracker.id)) {
-      if (session && a.session_id === session.id) continue;
+      if (sessionId ? a.session_id !== sessionId : !!(live && a.session_id === live.id)) continue;
       for (const t of a.transfers || []) { net[t.payer] = (net[t.payer] || 0) - t.amount; net[t.payee] = (net[t.payee] || 0) + t.amount; }
     }
     const cap = Math.min(-(net[from] || 0), net[to] || 0); // how much `from` owes AND `to` is owed
     if (cap <= 0.004) err("nothing outstanding between them");
-    if (!(amount > 0)) err("amount must be positive");
     const amt = Math.min(amount, cap);
     db.actions.push({
-      id: uuid(), tracker_id: tracker.id, session_id: null, actioner,
+      id: uuid(), tracker_id: tracker.id, session_id: sessionId || null, actioner,
       summary: `${from} settled up with ${to} (${amt.toFixed(2)})`,
       transfers: [{ payer: to, payee: from, amount: amt }],
       meta: { k: "settle", from, to }, created_at: nowIso(),
@@ -445,14 +459,17 @@ export async function localCall<T>(op: string, payload: Record<string, unknown>)
       // active session: cancel it (its actions never reached the debt counter)
       db.actions = db.actions.filter((a) => !(a.tracker_id === tracker.id && a.session_id === sid));
     } else {
-      // ended: refuse while the group still owes money ("settle the debts first",
-      // reusing the canonical groupState debts), then delete ONLY this session's
-      // games — NEVER the session-agnostic settlements. Wiping settlements could
-      // erase a real debt and lock offsetting sessions (2026-07-11 review); a
-      // settled session left on delete correctly shows a refund owed. Mirror of
-      // the server op.
+      // ended: allow once THIS session is squared up (its games + its own
+      // repayments net to zero), OR the whole group is square (legacy fallback for
+      // pre-0008 aggregate repayments). Then delete every row tagged with this
+      // session — games AND its own repayments together (both carry session_id) —
+      // so nothing is orphaned. Never touches other sessions' or legacy
+      // session-agnostic rows. Mirror of the server op.
       const st = groupState(db, tracker, uid);
-      if (Object.values(st.debts as Record<string, number>).some((v) => Math.abs(v) > 0.004)) err("settle the debts first — a session can only be deleted once its money is squared up");
+      const sess = st.sessions.find((x) => x.id === sid);
+      const sessOwed = Object.values((sess?.outstanding || {}) as Record<string, number>).some((v) => Math.abs(v) > 0.004);
+      const groupOwed = Object.values(st.debts as Record<string, number>).some((v) => Math.abs(v) > 0.004);
+      if (sessOwed && groupOwed) err("settle this session's debts first — it can only be deleted once its money is squared up");
       db.actions = db.actions.filter((a) => !(a.tracker_id === tracker.id && a.session_id === sid));
     }
     db.sessions = db.sessions.filter((x) => x.id !== sid);

@@ -52,7 +52,8 @@ export interface SessionSummary {
   started_by?: string | null;
   started_at: string;
   ended_at?: string | null;
-  net: Record<string, number>;
+  net: Record<string, number>;             // GAME net (what happened this session)
+  outstanding?: Record<string, number>;    // still-owed net (games + this session's repayments)
 }
 
 // Structured action so the log can render CURRENT seat names (rename rewrites
@@ -207,8 +208,8 @@ export const endSession = (code: string) => call<TrackerState>("end-session", { 
  *  owed `to`). Only a party to the debt may call it; the server clamps `amount`
  *  to what's actually outstanding. It nets out of the debt counter but never
  *  counts toward the all-time win/loss tally. */
-export const settleDebt = (code: string, from: string, to: string, amount: number) =>
-  call<TrackerState>("settle", { code, from, to, amount });
+export const settleDebt = (code: string, from: string, to: string, amount: number, sessionId?: string) =>
+  call<TrackerState>("settle", { code, from, to, amount, ...(sessionId ? { sessionId } : {}) });
 
 // Save this group's winning-hand tai scoring (shared by every member). Returns
 // the full group state (the tracker now carries `tai_scores`).

@@ -26,7 +26,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `supabase/functions/track/` | THE backend: validates Telegram initData (HMAC) on every call, service-role DB access |
 | `supabase/functions/bot/` | Webhook bot (@jpgmahjongbot): /start /open /help, group binding, fail-closed secret check |
 | `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |
-| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement; 0006 = `trackers.tai_scores` jsonb for per-group winning-hand scoring; 0007 = `sessions.name` + `remove_player` RPC for the group-screen rebuild); apply new ones in the SQL editor BEFORE the matching function deploys |
+| `supabase/migrations/` | Numbered migrations (0001 = baseline, 0002 = sessions/prefs/presets, 0003 = display-name (drop username uniqueness), 0004 = link-first groups: `sessions.players` + `members.name` nullable + `rename_player` follows into sessions; 0005 = atomic `settle_debt()` RPC for debt settlement; 0006 = `trackers.tai_scores` jsonb for per-group winning-hand scoring; 0007 = `sessions.name` + `remove_player` RPC for the group-screen rebuild; 0008 = per-session settle: a 6-arg `settle_debt()` overload that scopes the net to one session and stamps the repayment's `session_id`); apply new ones in the SQL editor BEFORE the matching function deploys |
 
 ## Branch topology (as of 2026-07-10 — mirrors the Clabbers rule)
 
@@ -97,20 +97,22 @@ may record it, the amount is clamped to what's outstanding, and it nets out of
 - **Destructive money ops (2026-07-11 group rebuild)**: `remove-player`,
   `delete-session`, `settle-all` require a SEATED member (`info.me`, not just
   isMember) + money-safety guards — remove-player rejects a name with a non-zero
-  balance or one in the running session; **delete-session (as of 2026-07-11)
-  refuses an ENDED session while the group's `debts` are non-zero** (a
-  "settle the debts first" 409, gated on the canonical `groupState().debts`; the
-  client shows a notice instead of arming the trash). An ACTIVE session just
-  cancels (its actions never reached the debt counter). Once squared up, delete
-  removes **only this session's game rows — NEVER the session-agnostic
-  settlements** (`meta.k='settle'`, `session_id` null). A brief attempt (same
-  day) to also wipe settlements, guarded by a `post==0` post-check, was REVERTED
-  after an adversarial review found it could **erase a real debt** (two other
-  sessions offsetting, one settled/one not → wiping all settlements masked the
-  unpaid one) and **permanently lock offsetting sessions** as undeletable. So a
-  settled session now leaves a correct **refund owed** on delete; making it
-  vanish cleanly needs per-session settlement tagging (**pending full fix** — a
-  migration). Regression-tested in `lib/sg/localBackend.delete.test.ts`. The
+  balance or one in the running session. **Settle + delete-session are PER-SESSION
+  (0008, 2026-07-11):** a repayment clears ONE session's debt and carries its
+  `session_id` (the `$` tab shows debts grouped by session; the `settle` op takes
+  a `sessionId` and uses the 6-arg `settle_debt` overload). `delete-session`
+  refuses an ENDED session only while **its own** `outstanding` (games + its
+  repayments) is non-zero AND the group still owes (an aggregate fallback so
+  offsetting/legacy-settled sessions aren't locked); otherwise it deletes **every
+  row tagged with that session — games AND its repayments together** (`session_id
+  = sid`), so a settled session vanishes cleanly with no orphaned settlement. An
+  ACTIVE session just cancels. Legacy pre-0008 repayments (`session_id` null) show
+  under "Earlier" in the `$` tab and settle the old aggregate way. History: a
+  first cut (same day) refused an ended session once ANY settlement existed; then
+  one that wiped ALL settlements guarded by a `post==0` check — REVERTED after an
+  adversarial review found it could **erase a real debt** (offsetting settled/
+  unsettled sessions) and **lock offsetting sessions**; the per-session model is
+  the sound fix. Regression-tested in `lib/sg/localBackend.delete.test.ts`. The
   LINK-FIRST peer-trust model still holds: any seated member can run these — a
   documented product decision, not an owner role.
 - Standing DON'Ts (with triggers) are at the end of

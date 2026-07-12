@@ -225,9 +225,16 @@ async function groupState(sb: SB, tracker: Record<string, unknown>, userId: numb
   const { data: sess } = await sb.from("sessions")
     .select("id, name, players, settle, started_by, started_at, ended_at")
     .eq("tracker_id", tid).order("started_at", { ascending: false });
+  // GAME net (history display) and OUTSTANDING (games + that session's own
+  // repayments — session-tagged settlements — for the $ tab's per-session
+  // settle). Legacy null-session settlements sit in neither.
   const netBySession: Record<string, Record<string, number>> = {};
+  const outBySession: Record<string, Record<string, number>> = {};
   for (const a of rows) {
     if (!a.session_id) continue;
+    const ob = outBySession[a.session_id] || (outBySession[a.session_id] = {});
+    for (const t of a.transfers || []) { ob[t.payer] = (ob[t.payer] || 0) - t.amount; ob[t.payee] = (ob[t.payee] || 0) + t.amount; }
+    if (isSettle(a)) continue;
     const nb = netBySession[a.session_id] || (netBySession[a.session_id] = {});
     for (const t of a.transfers || []) { nb[t.payer] = (nb[t.payer] || 0) - t.amount; nb[t.payee] = (nb[t.payee] || 0) + t.amount; }
   }
@@ -237,7 +244,7 @@ async function groupState(sb: SB, tracker: Record<string, unknown>, userId: numb
     return {
       id: s.id, name: s.name, players: Array.isArray(s.players) ? s.players : [],
       settle: s.settle, started_by: s.started_by, started_at: s.started_at, ended_at: s.ended_at,
-      net: netBySession[s.id] || {},
+      net: netBySession[s.id] || {}, outstanding: outBySession[s.id] || {},
     };
   });
   // A short audit trail of settlements so a repayment isn't invisible money.
@@ -712,14 +719,23 @@ Deno.serve(async (req) => {
       const from = String((body as { from?: string }).from || "");   // the debtor (owes)
       const to = String((body as { to?: string }).to || "");          // the creditor (is owed)
       const amount = Number((body as { amount?: unknown }).amount);
+      const sessionId = String((body as { sessionId?: string }).sessionId || "");
       if (!from || !to || from === to) return json({ error: "bad settlement" }, 400);
       if (info.me !== from && info.me !== to) return json({ error: "you can only settle a debt you're part of" }, 403);
       if (!(amount > 0)) return json({ error: "amount must be positive" }, 400);
-      // settle_debt returns the amount actually settled (0 = nothing outstanding,
-      // so nothing was inserted).
-      const { data: settled, error: se } = await sb.rpc("settle_debt", {
-        p_tracker: tracker.id, p_from: from, p_to: to, p_amount: amount, p_actioner: actioner,
-      });
+      // Per-session settle (0008): clear ONE session's debt, so the repayment
+      // carries its session_id and is removed with the session on delete. Passing
+      // p_session selects the 6-arg overload; omitting it uses the legacy
+      // aggregate one (an old client mid-deploy). settle_debt returns the amount
+      // actually settled (0 = nothing outstanding, so nothing was inserted).
+      const params: Record<string, unknown> = { p_tracker: tracker.id, p_from: from, p_to: to, p_amount: amount, p_actioner: actioner };
+      if (sessionId) {
+        const { data: s } = await sb.from("sessions").select("id, ended_at").eq("id", sessionId).eq("tracker_id", tracker.id).maybeSingle();
+        if (!s) return json({ error: "session not found" }, 404);
+        if (!(s as { ended_at?: string | null }).ended_at) return json({ error: "end the session before settling it" }, 409);
+        params.p_session = sessionId;
+      }
+      const { data: settled, error: se } = await sb.rpc("settle_debt", params);
       if (se) throw se;
       if (!(Number(settled) > 0.004)) return json({ error: "nothing outstanding between them" }, 409);
       return json(await groupState(sb, tracker, userId));
@@ -789,18 +805,21 @@ Deno.serve(async (req) => {
         const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
         if (de) throw de;
       } else {
-        // ENDED session: its money is frozen into the debt counter. Rule: refuse
-        // while the group still owes money ("settle the debts first"; reuse the
-        // canonical groupState debts so the gate matches what the app shows).
-        // Once squared up, delete ONLY this session's game rows — NEVER the
-        // session-agnostic settlements. (A prior version also wiped every
-        // settlement, guarded by a post-check; that could erase a real debt and
-        // lock offsetting sessions permanently — 2026-07-11 review. Deleting a
-        // settled session therefore leaves a correct refund owed; making it
-        // vanish cleanly is the pending settlement-tagging fix.)
+        // ENDED session: allow once THIS session is squared up (its games + its
+        // own repayments net to zero — 0008 per-session settle), OR the whole
+        // group is square (legacy fallback for pre-0008 aggregate repayments).
+        // Then delete every row tagged with this session — games AND its own
+        // repayments together (both carry session_id) — so nothing is orphaned.
+        // Other sessions' and legacy session-agnostic rows are untouched. (A
+        // brief prior version wiped ALL settlements guarded by an aggregate
+        // post-check; that could erase a real debt / lock offsetting sessions —
+        // 2026-07-11 review.)
         const st = await groupState(sb, tracker, userId);
-        if (Object.values(st.debts as Record<string, number>).some((v) => Math.abs(v) > 0.004)) {
-          return json({ error: "settle the debts first — a session can only be deleted once its money is squared up" }, 409);
+        const sess = (st.sessions as Array<{ id: string; outstanding?: Record<string, number> }>).find((x) => x.id === sid);
+        const sessOwed = Object.values(sess?.outstanding || {}).some((v) => Math.abs(v) > 0.004);
+        const groupOwed = Object.values(st.debts as Record<string, number>).some((v) => Math.abs(v) > 0.004);
+        if (sessOwed && groupOwed) {
+          return json({ error: "settle this session's debts first — it can only be deleted once its money is squared up" }, 409);
         }
         const { error: de } = await sb.from("actions").delete().eq("tracker_id", tracker.id).eq("session_id", sid);
         if (de) throw de;

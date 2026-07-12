@@ -196,6 +196,46 @@ end $$;
 revoke all on function settle_debt(uuid, text, text, numeric, text) from public, anon, authenticated;
 grant execute on function settle_debt(uuid, text, text, numeric, text) to service_role;
 
+-- 0008: per-session settle overload. Clears ONE session's debt and stamps the
+-- repayment with its session_id, so deleting that session removes its games AND
+-- its repayments together (see delete-session). The net is scoped to that
+-- session's rows. The 5-arg aggregate version above stays for legacy repayments.
+create or replace function settle_debt(
+  p_tracker uuid, p_from text, p_to text, p_amount numeric, p_actioner text, p_session uuid
+) returns numeric
+  language plpgsql security definer as $$
+declare
+  v_owe numeric; v_owed numeric; v_cap numeric; v_amt numeric;
+begin
+  perform pg_advisory_xact_lock(hashtext('settle:' || p_tracker::text)::bigint);
+  with tx as (
+    select e
+    from actions a, lateral jsonb_array_elements(a.transfers) e
+    where a.tracker_id = p_tracker and a.session_id = p_session
+  )
+  select
+    coalesce(sum(case when e->>'payer' = p_from then (e->>'amount')::numeric else 0 end)
+           - sum(case when e->>'payee' = p_from then (e->>'amount')::numeric else 0 end), 0),
+    coalesce(sum(case when e->>'payee' = p_to   then (e->>'amount')::numeric else 0 end)
+           - sum(case when e->>'payer' = p_to   then (e->>'amount')::numeric else 0 end), 0)
+  into v_owe, v_owed
+  from tx;
+  v_cap := least(v_owe, v_owed);
+  if v_cap is null or v_cap <= 0.004 then return 0; end if;
+  v_amt := least(p_amount, v_cap);
+  if v_amt <= 0 then return 0; end if;
+  insert into actions (tracker_id, session_id, actioner, summary, transfers, meta)
+  values (
+    p_tracker, p_session, p_actioner,
+    p_from || ' settled up with ' || p_to || ' (' || to_char(v_amt, 'FM999999990.00') || ')',
+    jsonb_build_array(jsonb_build_object('payer', p_to, 'payee', p_from, 'amount', v_amt)),
+    jsonb_build_object('k', 'settle', 'from', p_from, 'to', p_to)
+  );
+  return v_amt;
+end $$;
+revoke all on function settle_debt(uuid, text, text, numeric, text, uuid) from public, anon, authenticated;
+grant execute on function settle_debt(uuid, text, text, numeric, text, uuid) to service_role;
+
 alter table trackers enable row level security;
 alter table actions  enable row level security;
 -- No policies on purpose: the anon key gets nothing. The Edge Function uses the

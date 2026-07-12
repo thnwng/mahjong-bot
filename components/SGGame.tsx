@@ -376,14 +376,18 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
       const shownTab: GameType = types.includes(tab) ? tab : (types.find((t) => t !== "riichi") ?? types[0]);
       return (
         <div>
-          <h1>Mahjong</h1>
           {profile ? (
-            <p className="hint">
-              Welcome back, <strong>{profile.username}</strong>{" · "}
-              <button className="link-btn inline"
-                onClick={() => setScreen({ t: "settings" })}>Settings</button>
-            </p>
-          ) : null}
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <h1 style={{ margin: 0 }}>Welcome back, {profile.username}</h1>
+                <button className="link-btn" style={{ fontSize: "1.05rem", flexShrink: 0, whiteSpace: "nowrap", marginTop: 4 }}
+                  onClick={() => setScreen({ t: "settings" })}>Settings</button>
+              </div>
+              <p className="hint" style={{ marginTop: 2 }}>Mahjong</p>
+            </>
+          ) : (
+            <h1>Mahjong</h1>
+          )}
           {!inTelegram && <p className="err">Open this inside Telegram to use shared groups.</p>}
           {error && <p className="err">{error}</p>}
 

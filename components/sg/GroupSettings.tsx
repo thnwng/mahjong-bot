@@ -13,6 +13,7 @@ import { BOT_APP_LINK, getState, setGroupTai, settleAll } from "@/lib/sg/remote"
 import {
   Hand, Demo, STANDARD, EVENTS, FLOWERS, SPECIAL, TAI_HANDS, TAI_OPTIONS,
 } from "./taiCatalog";
+import { IconBack, IconRefresh, IconRestart } from "./icons";
 
 const TAI_DEFAULTS: Record<string, string> = Object.fromEntries(TAI_HANDS.map((h) => [h.id, h.def]));
 const errMsg = (e: unknown) => String((e as Error)?.message || e);
@@ -120,7 +121,7 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
           <>
             <p className="err">Couldn&apos;t load this group&apos;s scoring — {err}</p>
             <p className="hint">Not editing until it loads, so nothing gets overwritten.</p>
-            <button className="chip" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
+            <button className="chip with-ico" onClick={() => setReloadKey((k) => k + 1)}><IconRefresh size={16} />Retry</button>
           </>
         ) : (
           <>
@@ -145,7 +146,7 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
             <div className="hand-list">{SPECIAL.map(card)}</div>
 
             <div style={{ marginTop: 18 }}>
-              <button className="link-btn" onClick={resetDefaults} disabled={status !== "idle"}>Reset to defaults</button>
+              <button className="link-btn with-ico" onClick={resetDefaults} disabled={status !== "idle"}><IconRestart size={16} />Reset to defaults</button>
             </div>
 
             {/* Fixed Save button — one write for the whole map, enabled only when changed. */}
@@ -184,7 +185,7 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
         </>
       )}
 
-      <button className="link-btn" onClick={onBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
     </div>
   );
 }

@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { useBackButton } from "@/lib/telegram";
 import { openGroup, TrackerState } from "@/lib/sg/remote";
+import { IconBack } from "./icons";
 
 export function JoinForm({
   initialCode,
@@ -39,7 +40,7 @@ export function JoinForm({
         {loading ? "Joining…" : "Join"}
       </button>
       {error && <p className="err">{error}</p>}
-      <button className="link-btn" onClick={onBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
     </div>
   );
 }

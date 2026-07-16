@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
 import { GameType } from "@/lib/sg/remote";
+import { IconBack } from "./icons";
 
 export function Setup({
   title,
@@ -56,7 +57,7 @@ export function Setup({
         {busy ? "Creating…" : startLabel || "Create group"}
       </button>
       {error && <p className="err">{error}</p>}
-      <button className="link-btn" onClick={onBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
     </div>
   );
 }

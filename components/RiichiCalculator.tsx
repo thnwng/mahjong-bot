@@ -7,6 +7,7 @@ import { YAKU, totalHan } from "@/lib/riichi/yaku";
 import ResultCard from "./ResultCard";
 import TilesMode from "./TilesMode";
 import { NumberPicker } from "./NumberPicker";
+import { IconBack } from "./sg/icons";
 
 type Mode = "manual" | "yaku" | "tiles";
 
@@ -214,7 +215,7 @@ export default function RiichiCalculator({ onBack, embed }: { onBack: () => void
           <button className="link-btn" onClick={onBack}>← Cancel</button>
         </>
       ) : (
-        <button className="link-btn" onClick={onBack}>← Back</button>
+        <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
       )}
     </div>
   );

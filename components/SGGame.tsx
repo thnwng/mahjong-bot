@@ -37,6 +37,7 @@ import {
   TrackerState,
   OFFLINE,
 } from "@/lib/sg/remote";
+import { IconBack, IconSettings, IconChevronRight, IconRefresh } from "@/components/sg/icons";
 
 // Exactly one screen is showing at a time; every screen's data rides along in
 // its variant, so illegal combinations can't be represented.
@@ -52,16 +53,6 @@ type Screen =
   | { t: "newSession"; state: TrackerState }   // session setup
   | { t: "play"; state: TrackerState };        // the live session
 
-// Small gear icon (no emoji) for the per-group settings button.
-function Gear() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: "block" }}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
 
 const sumOf = (s: TrackerState): GroupSummary => ({ code: s.tracker.code, name: s.tracker.name, players: s.tracker.players.length });
 
@@ -73,7 +64,7 @@ function SettingsFallback({ onBack }: { onBack: () => void }) {
     <div>
       <h1>Settings</h1>
       <p className="err">Open this inside Telegram to manage your profile.</p>
-      <button className="link-btn" onClick={onBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
     </div>
   );
 }
@@ -250,7 +241,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
       <div>
         <h1>Mahjong</h1>
         <p className="err">Couldn&apos;t load: {bootError}</p>
-        <button className="primary-btn" onClick={runBoot}>Try again</button>
+        <button className="primary-btn with-ico" onClick={runBoot}><IconRefresh size={16} />Try again</button>
       </div>
     );
   if (needUsername)
@@ -442,7 +433,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
                         <button className="chip" style={{ padding: "3px 7px", display: "inline-flex", alignItems: "center" }}
                           aria-label={`${g.name || g.code} settings`}
                           onClick={(e) => { e.stopPropagation(); setScreen({ t: "groupSettings", code: g.code, name: g.name || g.code, ret: { t: "home" } }); }}>
-                          <Gear />
+                          <IconSettings size={14} />
                         </button>
                       </span>
                     </div>
@@ -480,13 +471,13 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
           {(shownTab === "sg4" || shownTab === "my3") && (
             <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
-              <button className="link-btn" onClick={() => setScreen({ t: "taihands" })}>Winning hands &amp; tai table →</button>
-              <button className="link-btn" onClick={() => setScreen({ t: "tiles" })}>Tai calculator (tiles) →</button>
+              <button className="link-btn with-ico" onClick={() => setScreen({ t: "taihands" })}>Winning hands &amp; tai table <IconChevronRight size={16} /></button>
+              <button className="link-btn with-ico" onClick={() => setScreen({ t: "tiles" })}>Tai calculator (tiles) <IconChevronRight size={16} /></button>
             </div>
           )}
 
           {!types.includes("riichi") || types.length === 1 ? (
-            <button className="link-btn" onClick={onOpenRiichi}>Riichi calculator →</button>
+            <button className="link-btn with-ico" onClick={onOpenRiichi}>Riichi calculator <IconChevronRight size={16} /></button>
           ) : null}
         </div>
       );

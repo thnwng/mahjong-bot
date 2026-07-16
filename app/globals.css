@@ -853,6 +853,26 @@ select.text-input {
   margin-bottom: 12px;
 }
 
+/* A Material Symbol sitting next to a button's own label (components/sg/icons.tsx).
+   Buttons opt in rather than .chip/.link-btn getting flex wholesale, so text-only
+   buttons keep their existing inline layout and baseline. */
+.with-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* .primary-btn is a fixed, full-width bar (left+right pinned) — inline-flex would
+   shrink-wrap it, so it stays block-level. */
+.primary-btn.with-ico {
+  display: flex;
+}
+
+.with-ico svg {
+  flex: 0 0 auto;
+}
+
 /* Small square icon button (rename, settings, copy, remove, delete) */
 .icon-btn {
   display: inline-flex;

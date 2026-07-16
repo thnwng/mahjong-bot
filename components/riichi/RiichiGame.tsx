@@ -13,6 +13,7 @@ import {
   RiichiConfig, DEFAULT_CONFIG, Hand, GameState,
   newGame, applyHand, reduce, dealerOf, roundOf, seatWind, placements,
 } from "@/lib/riichi/game";
+import { IconBack } from "../sg/icons";
 
 const WIND_LABEL: Record<string, string> = { E: "East", S: "South", W: "West", N: "North" };
 const WIND_CODE: Record<string, string> = { E: "EW", S: "SW", W: "WW", N: "NW" }; // game -> calculator tile codes
@@ -141,7 +142,7 @@ export default function RiichiGame({
         </>
       )}
 
-      <button className="link-btn" onClick={onBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
     </div>
   );
 }

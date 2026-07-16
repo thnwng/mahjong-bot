@@ -8,6 +8,7 @@ import { useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
 import { Profile, setDisplayName, setPrefs, GameType, validDisplayName, NAME_MAX, NAME_HINT } from "@/lib/sg/remote";
 import { GameTypeChecklist } from "./Identity";
+import { IconBack } from "./icons";
 
 export function Settings({
   profile,
@@ -91,7 +92,7 @@ export function Settings({
         {" "}Presets are saved from the start-session screen when you tweak the numbers. Managing them here is coming soon (WIP).
       </p>
 
-      <button className="link-btn" onClick={onBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
     </div>
   );
 }

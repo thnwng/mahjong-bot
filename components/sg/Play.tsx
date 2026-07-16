@@ -21,6 +21,7 @@ import {
 } from "@/lib/sg/payout";
 import { Action, stepsFor, buildResult, shootValue } from "@/lib/sg/actions";
 import { getState, addRemoteAction, renameSeat, endSession, TrackerState, ActionMeta, BOT_APP_LINK } from "@/lib/sg/remote";
+import { IconBack } from "./icons";
 
 type LogEntry = { summary: string; transfers: Transfer[]; actioner?: string; meta?: ActionMeta | null };
 
@@ -166,7 +167,7 @@ function ActionWizard({
         <button className="primary-btn" onClick={() => onConfirm(r.summary, r.transfers, r.meta)}>
           Record {ACTION_TITLES[action].title}
         </button>
-        <button className="link-btn" onClick={goBack}>← Back</button>
+        <button className="link-btn with-ico" onClick={goBack}><IconBack size={16} />Back</button>
       </div>
     );
   }
@@ -196,7 +197,7 @@ function ActionWizard({
           ))}
         </div>
       )}
-      <button className="link-btn" onClick={goBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={goBack}><IconBack size={16} />Back</button>
     </div>
   );
 }
@@ -284,7 +285,7 @@ function Dashboard({
         </>
       )}
 
-      <button className="link-btn" onClick={onBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
     </div>
   );
 }

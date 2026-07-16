@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
+import { IconBack } from "./icons";
 
 const TILE_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || "") + "/tiles/sg/";
 const src = (code: string) => `${TILE_BASE}sg${code}.png`;
@@ -103,7 +104,7 @@ export function SGTiles({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <button className="link-btn" onClick={onBack}>← Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
     </div>
   );
 }

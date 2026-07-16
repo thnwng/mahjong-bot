@@ -92,7 +92,7 @@ export function Settings({
         {" "}Presets are saved from the start-session screen when you tweak the numbers. Managing them here is coming soon (WIP).
       </p>
 
-      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
     </div>
   );
 }

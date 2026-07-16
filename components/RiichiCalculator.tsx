@@ -212,10 +212,10 @@ export default function RiichiCalculator({ onBack, embed }: { onBack: () => void
               ? `Use this hand · ${pick.yakuman ? pick.yakuman + "× yakuman" : pick.han + " han" + (pick.han < 5 ? " / " + pick.fu + " fu" : "")}`
               : "Build a valid hand first"}
           </button>
-          <button className="link-btn" onClick={onBack}>← Cancel</button>
+          <button className="link-btn with-ico" onClick={onBack}><IconBack />Cancel</button>
         </>
       ) : (
-        <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
+        <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
       )}
     </div>
   );

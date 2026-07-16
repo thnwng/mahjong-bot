@@ -853,6 +853,15 @@ select.text-input {
   margin-bottom: 12px;
 }
 
+/* The title must be able to SHRINK (flex min-width:auto would otherwise hold the
+   row at the widest unbroken word — a 30-char name/@handle pushed the right-side
+   control off-screen on narrow phones) and wrap anywhere within itself. */
+.group-head h1 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* A Material Symbol sitting next to a button's own label (components/sg/icons.tsx).
    Buttons opt in rather than .chip/.link-btn getting flex wholesale, so text-only
    buttons keep their existing inline layout and baseline. */
@@ -863,14 +872,18 @@ select.text-input {
   gap: 6px;
 }
 
-/* .primary-btn is a fixed, full-width bar (left+right pinned) — inline-flex would
-   shrink-wrap it, so it stays block-level. */
+/* .primary-btn is a fixed, full-width bar (left+right pinned). position:fixed
+   already blockifies inline-flex, so this is belt-and-suspenders documenting the
+   intent: the bar stays full-width. */
 .primary-btn.with-ico {
   display: flex;
 }
 
+/* One size for every icon-beside-label glyph — call sites don't pass size={}. */
 .with-ico svg {
   flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
 }
 
 /* Small square icon button (rename, settings, copy, remove, delete) */

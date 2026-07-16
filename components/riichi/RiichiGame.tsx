@@ -13,7 +13,7 @@ import {
   RiichiConfig, DEFAULT_CONFIG, Hand, GameState,
   newGame, applyHand, reduce, dealerOf, roundOf, seatWind, placements,
 } from "@/lib/riichi/game";
-import { IconBack } from "../sg/icons";
+import { IconBack, IconChevronRight } from "../sg/icons";
 
 const WIND_LABEL: Record<string, string> = { E: "East", S: "South", W: "West", N: "North" };
 const WIND_CODE: Record<string, string> = { E: "EW", S: "SW", W: "WW", N: "NW" }; // game -> calculator tile codes
@@ -142,7 +142,7 @@ export default function RiichiGame({
         </>
       )}
 
-      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
     </div>
   );
 }
@@ -249,15 +249,15 @@ function RecordHand({
               <button className="link-btn" disabled={winner == null} onClick={() => setCalc(true)}>change</button>
             </div>
           ) : (
-            <button className="primary-btn" disabled={winner == null} onClick={() => setCalc(true)}>
-              {winner == null ? "Pick the winner first" : "Score the hand →"}
+            <button className="primary-btn with-ico" disabled={winner == null} onClick={() => setCalc(true)}>
+              {winner == null ? "Pick the winner first" : <>Score the hand <IconChevronRight /></>}
             </button>
           )}
         </>
       )}
 
       <button className="primary-btn" style={{ marginTop: 14 }} disabled={!valid} onClick={submit}>Record hand</button>
-      <button className="link-btn" onClick={onCancel}>← Cancel</button>
+      <button className="link-btn with-ico" onClick={onCancel}><IconBack />Cancel</button>
     </div>
   );
 }

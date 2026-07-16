@@ -40,7 +40,7 @@ export function JoinForm({
         {loading ? "Joining…" : "Join"}
       </button>
       {error && <p className="err">{error}</p>}
-      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
     </div>
   );
 }

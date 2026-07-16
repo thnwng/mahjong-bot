@@ -6,7 +6,7 @@
 //   • Google Fonts CDN — a blocking third-party round-trip before any icon paints,
 //     and Material Symbols renders its ligature names as the LITERAL WORDS
 //     ("delete", "settings") until the font arrives. Very visible on a slow boot.
-//   • self-hosted variable font — hundreds of KB-plus of glyphs to ship ~7 icons.
+//   • self-hosted variable font — hundreds of KB of glyphs for this small set.
 // Each path below is ~100–650 bytes, needs no network, can't FOUT, and inherits
 // colour through currentColor so .icon-btn/.chip styling just works.
 //

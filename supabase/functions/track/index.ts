@@ -805,9 +805,12 @@ Deno.serve(async (req) => {
       // "settled" = this session's `outstanding` (its games + its own repayments,
       // all carrying session_id) nets to zero. Deleting by session_id takes a
       // session's repayments with it, so no session-agnostic settlement is ever
-      // orphaned (the 2026-07-11 corruption). actions.session_id is ON DELETE SET
-      // NULL, so delete the actions FIRST, then the session row. Any SEATED member
-      // may (LINK-FIRST peer trust).
+      // orphaned. HARD LESSON (2026-07-11 review, briefly-deployed then reverted):
+      // never delete BEYOND this session's rows — a version that wiped ALL
+      // settlements behind an aggregate post-check could erase a real debt and
+      // lock offsetting sessions (regression tests: localBackend.delete.test.ts).
+      // actions.session_id is ON DELETE SET NULL, so delete the actions FIRST,
+      // then the session row. Any SEATED member may (LINK-FIRST peer trust).
       if (!userId) return json({ error: "no account" }, 401);
       const code = String((body as { code?: string }).code || "").toUpperCase();
       const sid = String((body as { sessionId?: string }).sessionId || "");

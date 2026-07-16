@@ -121,7 +121,7 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
           <>
             <p className="err">Couldn&apos;t load this group&apos;s scoring — {err}</p>
             <p className="hint">Not editing until it loads, so nothing gets overwritten.</p>
-            <button className="chip with-ico" onClick={() => setReloadKey((k) => k + 1)}><IconRefresh size={16} />Retry</button>
+            <button className="chip with-ico" onClick={() => setReloadKey((k) => k + 1)}><IconRefresh />Retry</button>
           </>
         ) : (
           <>
@@ -146,7 +146,7 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
             <div className="hand-list">{SPECIAL.map(card)}</div>
 
             <div style={{ marginTop: 18 }}>
-              <button className="link-btn with-ico" onClick={resetDefaults} disabled={status !== "idle"}><IconRestart size={16} />Reset to defaults</button>
+              <button className="link-btn with-ico" onClick={resetDefaults} disabled={status !== "idle"}><IconRestart />Reset to defaults</button>
             </div>
 
             {/* Fixed Save button — one write for the whole map, enabled only when changed. */}
@@ -185,7 +185,7 @@ export default function GroupSettings({ code, name, onBack }: { code: string; na
         </>
       )}
 
-      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
     </div>
   );
 }

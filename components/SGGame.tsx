@@ -64,7 +64,7 @@ function SettingsFallback({ onBack }: { onBack: () => void }) {
     <div>
       <h1>Settings</h1>
       <p className="err">Open this inside Telegram to manage your profile.</p>
-      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
     </div>
   );
 }
@@ -241,7 +241,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
       <div>
         <h1>Mahjong</h1>
         <p className="err">Couldn&apos;t load: {bootError}</p>
-        <button className="primary-btn with-ico" onClick={runBoot}><IconRefresh size={16} />Try again</button>
+        <button className="primary-btn with-ico" onClick={runBoot}><IconRefresh />Try again</button>
       </div>
     );
   if (needUsername)
@@ -369,9 +369,9 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
         <div>
           {profile ? (
             <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                <h1 style={{ margin: 0 }}>Welcome back, {profile.username}</h1>
-                <button className="link-btn" style={{ fontSize: "1.05rem", flexShrink: 0, whiteSpace: "nowrap", marginTop: 4 }}
+              <div className="group-head" style={{ marginBottom: 0 }}>
+                <h1>Welcome back, {profile.username}</h1>
+                <button className="link-btn" style={{ fontSize: "var(--text-md)", flexShrink: 0, whiteSpace: "nowrap", marginTop: 4 }}
                   onClick={() => setScreen({ t: "settings" })}>Settings</button>
               </div>
               <p className="hint" style={{ marginTop: 2 }}>Mahjong</p>
@@ -471,13 +471,13 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
           {(shownTab === "sg4" || shownTab === "my3") && (
             <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
-              <button className="link-btn with-ico" onClick={() => setScreen({ t: "taihands" })}>Winning hands &amp; tai table <IconChevronRight size={16} /></button>
-              <button className="link-btn with-ico" onClick={() => setScreen({ t: "tiles" })}>Tai calculator (tiles) <IconChevronRight size={16} /></button>
+              <button className="link-btn with-ico" onClick={() => setScreen({ t: "taihands" })}>Winning hands &amp; tai table <IconChevronRight /></button>
+              <button className="link-btn with-ico" onClick={() => setScreen({ t: "tiles" })}>Tai calculator (tiles) <IconChevronRight /></button>
             </div>
           )}
 
           {!types.includes("riichi") || types.length === 1 ? (
-            <button className="link-btn with-ico" onClick={onOpenRiichi}>Riichi calculator <IconChevronRight size={16} /></button>
+            <button className="link-btn with-ico" onClick={onOpenRiichi}>Riichi calculator <IconChevronRight /></button>
           ) : null}
         </div>
       );

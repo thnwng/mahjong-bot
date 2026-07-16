@@ -13,7 +13,7 @@ import { useBackButton } from "@/lib/telegram";
 import {
   Hand, Demo, STANDARD, EVENTS, FLOWERS, SPECIAL, INSTANT, DEFAULTS, SEATS,
 } from "./taiCatalog";
-import { IconBack } from "./icons";
+import { IconBack, IconRestart } from "./icons";
 
 const STORE = "sgTai_v1";
 
@@ -189,8 +189,8 @@ export default function SGTaiHands({ onBack }: { onBack: () => void }) {
       </div>
 
       <div style={{ marginTop: 18, display: "flex", gap: 16, alignItems: "center" }}>
-        <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
-        <button className="link-btn" onClick={resetAll}>Reset to defaults</button>
+        <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
+        <button className="link-btn with-ico" onClick={resetAll}><IconRestart />Reset to defaults</button>
       </div>
     </div>
   );

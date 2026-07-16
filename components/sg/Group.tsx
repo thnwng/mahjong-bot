@@ -232,7 +232,7 @@ export function GroupScreen({
             <button className="link-btn inline" onClick={() => { setRenaming(false); setRenameVal(t.name || ""); }}>Cancel</button>
           </div>
         ) : (
-          <h1 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          <h1 style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {t.name || t.code}
             <button className="icon-btn" aria-label="Rename group" onClick={() => { setRenameVal(t.name || ""); setRenaming(true); }}><IconEdit /></button>
           </h1>
@@ -248,8 +248,8 @@ export function GroupScreen({
           <button className="icon-btn" aria-label="Copy invite link" onClick={copyLink}><IconCopy /></button>
         </div>
         <div className="row" style={{ marginTop: 4 }}>
-          <button className="chip with-ico" disabled={work || busy} onClick={() => run(() => sendInviteToChat(t.code))}><IconSend size={16} />Send to the group</button>
-          <button className="chip with-ico" onClick={() => { haptic("selection"); shareToChat(shareLink, `Join "${t.name || "our"}" mahjong group`); }}><IconShare size={16} />Forward to a chat</button>
+          <button className="chip with-ico" disabled={work || busy} onClick={() => run(() => sendInviteToChat(t.code))}><IconSend />Send to the group</button>
+          <button className="chip with-ico" onClick={() => { haptic("selection"); shareToChat(shareLink, `Join "${t.name || "our"}" mahjong group`); }}><IconShare />Forward to a chat</button>
         </div>
         {copied && <div className="line meta">Link copied.</div>}
       </div>
@@ -270,7 +270,7 @@ export function GroupScreen({
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 {!me && !claimed.has(p) && (
-                  <button className="chip with-ico" disabled={work || busy} onClick={() => claim(p)}><IconPersonCheck size={16} />This is me</button>
+                  <button className="chip with-ico" disabled={work || busy} onClick={() => claim(p)}><IconPersonCheck />This is me</button>
                 )}
                 <button className="icon-btn danger" aria-label={`Remove ${p}`} disabled={work || busy} onClick={() => doRemove(p)}><IconClose /></button>
               </span>
@@ -296,7 +296,7 @@ export function GroupScreen({
           ))}
           <div className="row" style={{ alignItems: "center" }}>
             <button className="chip with-ico" disabled={work || busy || !addFields.some((s) => s.trim())} onClick={commitAdds}>
-              <IconAdd size={16} />{mine && !me ? "Join / add" : "Add"}
+              <IconAdd />{mine && !me ? "Join / add" : "Add"}
             </button>
             {!me && (
               <label className="row" style={{ alignItems: "center", gap: 6, fontSize: "0.8rem", opacity: 0.8, cursor: "pointer" }}>
@@ -328,7 +328,7 @@ export function GroupScreen({
               <div className="line meta">{(session.players || []).join(", ")}</div>
               <div className="line meta">Started by {session.started_by || "?"} · auto-ends in ~{hoursLeft(session.started_at)}h</div>
               <div className="row" style={{ marginTop: 6, alignItems: "center" }}>
-                <button className="chip on with-ico" disabled={busy} onClick={() => { haptic("light"); onEnterSession(); }}><IconLogin size={16} />Enter session</button>
+                <button className="chip on with-ico" disabled={busy} onClick={() => { haptic("light"); onEnterSession(); }}><IconLogin />Enter session</button>
                 <button className="icon-btn danger" aria-label="Delete running session" disabled={work || busy} onClick={() => doDeleteSession(session.id, false)}><IconDelete /></button>
               </div>
               {confirmDelSess === session.id && <p className="warn">Delete the running session and its money? Tap the trash again to confirm.</p>}
@@ -336,7 +336,7 @@ export function GroupScreen({
           ) : (
             <>
               <p className="hint">Start one when you sit down — pick who&apos;s playing, name it, set payouts. It tallies into $ when it ends.</p>
-              <button className="chip on with-ico" disabled={busy || work || !enoughToStart} onClick={() => { haptic("light"); onNewSession(); }}><IconPlay size={16} />Start a session</button>
+              <button className="chip on with-ico" disabled={busy || work || !enoughToStart} onClick={() => { haptic("light"); onNewSession(); }}><IconPlay />Start a session</button>
               {!enoughToStart && <p className="fine">Add at least 3 names above to start a session.</p>}
             </>
           )}
@@ -427,7 +427,7 @@ export function GroupScreen({
         </>
       )}
 
-      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
     </div>
   );
 }
@@ -528,7 +528,7 @@ export function NewSession({
 
       <button className="primary-btn" disabled={busy || !ready} onClick={start}>{busy ? "Starting…" : "Start session"}</button>
       {error && <p className="err">{error}</p>}
-      <button className="link-btn with-ico" onClick={onBack}><IconBack size={16} />Back</button>
+      <button className="link-btn with-ico" onClick={onBack}><IconBack />Back</button>
     </div>
   );
 }

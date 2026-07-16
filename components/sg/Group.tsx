@@ -24,23 +24,11 @@ import {
   sendInviteToChat,
   BOT_APP_LINK,
 } from "@/lib/sg/remote";
+import { IconSettings, IconEdit, IconCopy, IconClose, IconDelete } from "./icons";
 
 const seatsFor = (mahjongType: string) => (mahjongType === "my3" ? 3 : 4);
 const typeLabel = (v: string) => GAME_TYPES.find((g) => g.v === v)?.label || v;
 const ROSTER_MAX = 12;
-
-// ── tiny inline icons (no emoji) ────────────────────────────────────
-const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-const IconX = () => <svg width="14" height="14" viewBox="0 0 24 24" {...stroke} aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>;
-const IconPencil = () => <svg width="14" height="14" viewBox="0 0 24 24" {...stroke} aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>;
-const IconTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" {...stroke} aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6" /></svg>;
-const IconCopy = () => <svg width="14" height="14" viewBox="0 0 24 24" {...stroke} aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
-const IconGear = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" {...stroke} aria-hidden="true">
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-  </svg>
-);
 
 // Greedy "who pays who" suggestion from net balances: biggest debtor pays
 // biggest creditor until everyone is square. Not unique, but minimal-ish.
@@ -246,10 +234,10 @@ export function GroupScreen({
         ) : (
           <h1 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
             {t.name || t.code}
-            <button className="icon-btn" aria-label="Rename group" onClick={() => { setRenameVal(t.name || ""); setRenaming(true); }}><IconPencil /></button>
+            <button className="icon-btn" aria-label="Rename group" onClick={() => { setRenameVal(t.name || ""); setRenaming(true); }}><IconEdit /></button>
           </h1>
         )}
-        <button className="icon-btn" aria-label="Group settings" onClick={onOpenSettings}><IconGear /></button>
+        <button className="icon-btn" aria-label="Group settings" onClick={onOpenSettings}><IconSettings /></button>
       </div>
 
       {/* Invite box (above players) */}
@@ -284,7 +272,7 @@ export function GroupScreen({
                 {!me && !claimed.has(p) && (
                   <button className="chip" disabled={work || busy} onClick={() => claim(p)}>This is me</button>
                 )}
-                <button className="icon-btn danger" aria-label={`Remove ${p}`} disabled={work || busy} onClick={() => doRemove(p)}><IconX /></button>
+                <button className="icon-btn danger" aria-label={`Remove ${p}`} disabled={work || busy} onClick={() => doRemove(p)}><IconClose /></button>
               </span>
             </div>
           ))}
@@ -341,7 +329,7 @@ export function GroupScreen({
               <div className="line meta">Started by {session.started_by || "?"} · auto-ends in ~{hoursLeft(session.started_at)}h</div>
               <div className="row" style={{ marginTop: 6, alignItems: "center" }}>
                 <button className="chip on" disabled={busy} onClick={() => { haptic("light"); onEnterSession(); }}>Enter session</button>
-                <button className="icon-btn danger" aria-label="Delete running session" disabled={work || busy} onClick={() => doDeleteSession(session.id, false)}><IconTrash /></button>
+                <button className="icon-btn danger" aria-label="Delete running session" disabled={work || busy} onClick={() => doDeleteSession(session.id, false)}><IconDelete /></button>
               </div>
               {confirmDelSess === session.id && <p className="warn">Delete the running session and its money? Tap the trash again to confirm.</p>}
             </div>
@@ -369,7 +357,7 @@ export function GroupScreen({
                         {netLine(s.net) && <div className="log" style={{ marginTop: 2 }}>{netLine(s.net)}</div>}
                       </span>
                       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <button className="icon-btn danger" aria-label={`Delete session ${s.name || sessDate(s.started_at)}`} disabled={work || busy} onClick={() => doDeleteSession(s.id, true)}><IconTrash /></button>
+                        <button className="icon-btn danger" aria-label={`Delete session ${s.name || sessDate(s.started_at)}`} disabled={work || busy} onClick={() => doDeleteSession(s.id, true)}><IconDelete /></button>
                       </span>
                     </div>
                     {delNotice === s.id && sessOwed && <p className="warn">Settle this session&apos;s debt first — see the <strong>$</strong> tab.</p>}

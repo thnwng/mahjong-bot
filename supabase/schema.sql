@@ -64,7 +64,7 @@ end $$;
 -- Dedups by name and enforces the ROSTER_MAX=12 cap in-statement (0004) so a
 -- concurrent add can't exceed it. Only the Edge Function (service role) calls it.
 create or replace function add_player(p_id uuid, p_name text) returns void
-  language sql security definer as $$
+  language sql security definer set search_path = public, pg_temp as $$
     update trackers set players = players || to_jsonb(p_name)
     where id = p_id and not (players ? p_name) and jsonb_array_length(players) < 12;
   $$;
@@ -74,7 +74,7 @@ grant execute on function add_player(uuid, text) to service_role;
 -- 0007: atomic roster removal (mirrors add_player). Gated by the edge function
 -- (member-only, balance settled, not in the running session).
 create or replace function remove_player(p_id uuid, p_name text) returns void
-  language sql security definer as $$
+  language sql security definer set search_path = public, pg_temp as $$
     update trackers set players = coalesce(
       (select jsonb_agg(elem) from jsonb_array_elements(players) elem where elem <> to_jsonb(p_name)),
       '[]'::jsonb)
@@ -109,7 +109,7 @@ alter table profiles enable row level security;   -- no policies: only the Edge 
 -- stay attributed to the renamed player. actions.summary keeps its original
 -- text as a historical record. Order is preserved. service_role only.
 create or replace function rename_player(p_id uuid, p_user bigint, p_old text, p_new text)
-  returns void language plpgsql security definer as $$
+  returns void language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   update members set name = p_new where tracker_id = p_id and user_id = p_user;
   update trackers set players = coalesce((
@@ -155,7 +155,7 @@ grant execute on function rename_player(uuid, bigint, text, text) to service_rol
 create or replace function settle_debt(
   p_tracker uuid, p_from text, p_to text, p_amount numeric, p_actioner text
 ) returns numeric
-  language plpgsql security definer as $$
+  language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_owe    numeric;   -- how much p_from still owes overall (paid out - taken in)
   v_owed   numeric;   -- how much p_to is still owed overall (taken in - paid out)
@@ -203,7 +203,7 @@ grant execute on function settle_debt(uuid, text, text, numeric, text) to servic
 create or replace function settle_debt(
   p_tracker uuid, p_from text, p_to text, p_amount numeric, p_actioner text, p_session uuid
 ) returns numeric
-  language plpgsql security definer as $$
+  language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_owe numeric; v_owed numeric; v_cap numeric; v_amt numeric;
 begin

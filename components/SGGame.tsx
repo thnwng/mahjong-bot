@@ -69,8 +69,10 @@ function SettingsFallback({ onBack }: { onBack: () => void }) {
   );
 }
 
-// Manual home ordering (the default is recent-activity from the server; a tap
-// on the up-arrow pins your own order). Per Telegram account, on-device.
+// Legacy manual home ordering, kept read-only ON PURPOSE. The up-arrow UI that
+// wrote this key was removed 2026-07-30, but a device that pinned an order
+// before then still has it honored here (the default is recent-activity from
+// the server). Per Telegram account, on-device; DevBar's reset clears it.
 function orderKey(): string {
   const uid = typeof window !== "undefined" ? window.Telegram?.WebApp?.initDataUnsafe?.user?.id : undefined;
   return `mahjong-order:${uid ?? "anon"}`;
@@ -353,7 +355,11 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
     case "home": {
       const types: GameType[] = profile?.gameTypes?.length ? profile.gameTypes : ["sg4"];
-      const shownTab: GameType = types.includes("sg4") ? "sg4" : (types.find((t) => t !== "riichi") ?? types[0]);
+      // Home shows ONE game type, sg4 preferred — deliberate since the type
+      // dropdown was removed (2026-07-30). A profile with both sg4 and my3
+      // won't see the my3 view until my3 ships real content; Riichi is always
+      // reachable via the link at the bottom.
+      const homeType: GameType = types.includes("sg4") ? "sg4" : (types.find((t) => t !== "riichi") ?? types[0]);
       return (
         <div>
           {profile ? (
@@ -368,11 +374,11 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
           {!inTelegram && <p className="err">Open this inside Telegram to use shared groups.</p>}
           {error && <p className="err">{error}</p>}
 
-          {shownTab === "riichi" ? (
+          {homeType === "riichi" ? (
             <div className="choices" style={{ marginTop: 8 }}>
               <div className="choice-btn" onClick={onOpenRiichi}>Riichi calculator<small>score a hand</small></div>
             </div>
-          ) : shownTab === "my3" ? (
+          ) : homeType === "my3" ? (
             <p className="hint">
               Malaysian 3-player is coming soon — its groups and sessions will live here. (WIP)
             </p>
@@ -437,16 +443,18 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
             </>
           )}
 
-          {(shownTab === "sg4" || shownTab === "my3") && (
+          {(homeType === "sg4" || homeType === "my3") && (
             <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
               <button className="link-btn with-ico" onClick={() => setScreen({ t: "taihands" })}>Winning hands &amp; tai table <IconChevronRight /></button>
               <button className="link-btn with-ico" onClick={() => setScreen({ t: "tiles" })}>Tai calculator (tiles) <IconChevronRight /></button>
             </div>
           )}
 
-          {!types.includes("riichi") || types.length === 1 ? (
+          {/* Always shown: with the type dropdown gone this is the one home
+              path to the Riichi calculator for multi-type profiles. */}
+          {homeType !== "riichi" && (
             <button className="link-btn with-ico" onClick={onOpenRiichi}>Riichi calculator <IconChevronRight /></button>
-          ) : null}
+          )}
         </div>
       );
     }

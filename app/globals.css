@@ -17,7 +17,7 @@
      + mono tokens here so the vendored halcyon.css stays untouched — a re-vendor
      won't clobber this. --font-display = var(--font-sans), so it follows too. */
   --font-sans: 'Noto Serif', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
-  --font-mono: 'Noto Serif', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  --font-mono: var(--font-sans); /* one source of truth — a family tweak can't drift */
 }
 
 * {

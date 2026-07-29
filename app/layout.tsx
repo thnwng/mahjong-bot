@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+// Order matters: halcyon.css THEN globals.css — globals.css's :root overrides
+// the Halcyon font tokens (equal specificity, so last-in-source wins).
 import "./halcyon.css";
 import "./globals.css";
 

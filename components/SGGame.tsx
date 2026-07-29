@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { haptic, useBackButton } from "@/lib/telegram";
 import { money } from "@/lib/sg/payout";
+import { greeting } from "@/lib/sg/greeting";
 import { UsernameGate, GameTypesGate } from "@/components/sg/Identity";
 import { JoinForm } from "@/components/sg/Join";
 import { Setup } from "@/components/sg/Setup";
@@ -32,7 +33,6 @@ import {
   getMe,
   Profile,
   GameType,
-  GAME_TYPES,
   GroupSummary,
   TrackerState,
   OFFLINE,
@@ -95,7 +95,6 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<GameType>("sg4");
   // Inside Telegram we have a validated account; outside (plain browser) we
   // don't. canSync also needs the backend URL configured.
   // OFFLINE dev mode: the local backend stands in for Telegram, so the app is
@@ -265,16 +264,6 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
     catch (e) { setError(String((e as Error).message || e)); }
     finally { setBusy(false); }
   };
-  const moveUp = (idx: number) => {
-    if (idx <= 0) return;
-    haptic("selection");
-    setActive((prev) => {
-      const next = prev.slice();
-      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-      try { localStorage.setItem(orderKey(), JSON.stringify(next.map((g) => g.code))); } catch { /* ignore */ }
-      return next;
-    });
-  };
 
   switch (screen.t) {
     case "play":
@@ -364,37 +353,20 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
 
     case "home": {
       const types: GameType[] = profile?.gameTypes?.length ? profile.gameTypes : ["sg4"];
-      const shownTab: GameType = types.includes(tab) ? tab : (types.find((t) => t !== "riichi") ?? types[0]);
+      const shownTab: GameType = types.includes("sg4") ? "sg4" : (types.find((t) => t !== "riichi") ?? types[0]);
       return (
         <div>
           {profile ? (
-            <>
-              <div className="group-head" style={{ marginBottom: 0 }}>
-                <h1>Welcome back, {profile.username}</h1>
-                <button className="link-btn" style={{ fontSize: "var(--text-md)", flexShrink: 0, whiteSpace: "nowrap", marginTop: 4 }}
-                  onClick={() => setScreen({ t: "settings" })}>Settings</button>
-              </div>
-              <p className="hint" style={{ marginTop: 2 }}>Mahjong</p>
-            </>
+            <div className="group-head" style={{ marginBottom: 0 }}>
+              <h1>{greeting(new Date().getHours())}, {profile.username}</h1>
+              <button className="link-btn" style={{ fontSize: "var(--text-md)", flexShrink: 0, whiteSpace: "nowrap", marginTop: 4 }}
+                onClick={() => setScreen({ t: "settings" })}>Settings</button>
+            </div>
           ) : (
             <h1>Mahjong</h1>
           )}
           {!inTelegram && <p className="err">Open this inside Telegram to use shared groups.</p>}
           {error && <p className="err">{error}</p>}
-
-          {types.length > 1 && (
-            <select className="text-input" value={shownTab}
-              onChange={(e) => {
-                const v = e.target.value as GameType;
-                haptic("selection");
-                if (v === "riichi") { onOpenRiichi(); return; }
-                setTab(v);
-              }}>
-              {types.map((t) => (
-                <option key={t} value={t}>{GAME_TYPES.find((g) => g.v === t)?.label || t}</option>
-              ))}
-            </select>
-          )}
 
           {shownTab === "riichi" ? (
             <div className="choices" style={{ marginTop: 8 }}>
@@ -406,13 +378,13 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
             </p>
           ) : (
             <>
-              <h2>Your groups</h2>
+              <h2>Groups</h2>
               {active.length === 0 ? (
                 <p className="hint">You haven&apos;t joined any groups yet.</p>
               ) : (
                 <>
                 <div className="balances">
-                  {active.map((g, i) => (
+                  {active.map((g) => (
                     <div key={g.code} className="bal-row" style={{ cursor: canSync ? "pointer" : "default", alignItems: "center" }}
                       onClick={() => canSync && !busy && openByCode(g.code)}>
                       <span>
@@ -426,10 +398,6 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
                             {g.myNet >= 0 ? "+" : ""}{money(g.myNet)}
                           </span>
                         )}
-                        {i > 0 && (
-                          <button className="chip" style={{ padding: "2px 8px", fontSize: "0.8rem" }}
-                            onClick={(e) => { e.stopPropagation(); moveUp(i); }}>↑</button>
-                        )}
                         <button className="chip" style={{ padding: "3px 7px", display: "inline-flex", alignItems: "center" }}
                           aria-label={`${g.name || g.code} settings`}
                           onClick={(e) => { e.stopPropagation(); setScreen({ t: "groupSettings", code: g.code, name: g.name || g.code, ret: { t: "home" } }); }}>
@@ -440,7 +408,7 @@ export default function SGGame({ onOpenRiichi }: { onOpenRiichi: () => void }) {
                   ))}
                 </div>
                 <p className="fine">
-                  Ordered by recent activity — use ↑ to pin your own order. Tap a group to enter it and start a session.
+                  Ordered by recent activity. Tap a group to enter it and start a session.
                 </p>
                 </>
               )}

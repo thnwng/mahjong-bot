@@ -13,6 +13,11 @@
   --neg: var(--danger-text);
   /* iPhone home-indicator (and similar) inset; Telegram sets its own var. */
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
+  /* All UI type is Noto Serif (loaded in layout.tsx). Override the Halcyon sans
+     + mono tokens here so the vendored halcyon.css stays untouched — a re-vendor
+     won't clobber this. --font-display = var(--font-sans), so it follows too. */
+  --font-sans: 'Noto Serif', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  --font-mono: 'Noto Serif', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
 }
 
 * {

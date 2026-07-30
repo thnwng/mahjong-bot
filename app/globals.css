@@ -18,6 +18,21 @@
      won't clobber this. --font-display = var(--font-sans), so it follows too. */
   --font-sans: 'Noto Serif', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
   --font-mono: var(--font-sans); /* one source of truth — a family tweak can't drift */
+
+  /* COMFORT SCALE (2026-07-30). The app reads at the small end of Halcyon's
+     type scale (most content is --text-sm) with tight padding, which felt
+     cramped on a phone. Nudge the small end up one step and loosen the default
+     line-height; the spacing bumps that go with this live in the rules below.
+     Overridden here, not in the vendored halcyon.css, so a re-vendor keeps it. */
+  --text-2xs: 12px;
+  --text-xs:  13px;
+  --text-sm:  14px;
+  --text-base:16px;
+  --text-md:  17px;
+  --text-lg:  19px;
+  --text-xl:  22px;
+  --leading-snug:   1.4;
+  --leading-normal: 1.6;
 }
 
 * {
@@ -31,7 +46,7 @@ body {
   line-height: var(--leading-normal);
   background: var(--bg);
   color: var(--text);
-  padding: 16px 16px calc(96px + var(--safe-bottom));
+  padding: 20px 18px calc(104px + var(--safe-bottom));
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -42,7 +57,7 @@ h1 {
   font-size: var(--text-xl);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-tight);
-  margin: 0 0 16px;
+  margin: 0 0 20px;
 }
 
 /* Section labels — Halcyon "eyebrow": mono, uppercase, tracked, faint. */
@@ -50,7 +65,7 @@ h2 {
   font-family: var(--font-mono);
   font-size: var(--eyebrow-size);
   font-weight: var(--weight-medium);
-  margin: 20px 0 8px;
+  margin: 28px 0 10px;
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: var(--tracking-widest);
@@ -81,14 +96,14 @@ a {
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* Chips — Halcyon secondary button; selected/on = accent fill. */
 .chip {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
-  padding: 8px 13px;
+  padding: 10px 15px;
   font-family: var(--font-sans); /* buttons don't inherit the body font */
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
@@ -121,11 +136,11 @@ a {
 .choices {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 12px;
 }
 
 .choice-btn {
-  padding: 20px 14px;
+  padding: 24px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface);
@@ -151,7 +166,7 @@ a {
   font-size: var(--text-xs);
   font-weight: var(--weight-regular);
   color: var(--text-muted);
-  margin-top: 3px;
+  margin-top: 5px;
 }
 
 /* Multi-select variant (game-type checklist) */
@@ -175,10 +190,10 @@ a {
 /* Primary action button, fixed to the bottom (padded above the home indicator) */
 .primary-btn {
   position: fixed;
-  bottom: calc(16px + var(--safe-bottom));
-  left: 16px;
-  right: 16px;
-  padding: 14px;
+  bottom: calc(18px + var(--safe-bottom));
+  left: 18px;
+  right: 18px;
+  padding: 16px;
   border: none;
   border-radius: var(--radius-lg);
   background: var(--accent);
@@ -209,7 +224,7 @@ a {
   font-weight: var(--weight-medium);
   cursor: pointer;
   padding: 0;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .link-btn:disabled {
@@ -228,8 +243,8 @@ a {
 .text-input {
   display: block;
   width: 100%;
-  padding: 9px 12px;
-  margin-bottom: 8px;
+  padding: 11px 14px;
+  margin-bottom: 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   background: var(--surface);
@@ -264,13 +279,13 @@ select.text-input {
 }
 
 .text-input.small {
-  width: 72px;
+  width: 78px;
 }
 
 .vlabel {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
@@ -285,13 +300,13 @@ select.text-input {
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-xs);
-  padding: 4px 14px;
+  padding: 6px 16px;
 }
 
 .bal-row {
   display: flex;
   justify-content: space-between;
-  padding: 9px 0;
+  padding: 12px 0;
   font-size: var(--text-sm);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -332,14 +347,14 @@ select.text-input {
   /* explanatory paragraph under a heading / empty-state line */
   font-size: var(--text-sm);
   color: var(--text-muted);
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 
 .fine {
   /* footnote-grade caption */
   font-size: var(--text-xs);
   color: var(--text-faint);
-  margin: 4px 0 10px;
+  margin: 6px 0 12px;
 }
 
 .meta {
@@ -465,8 +480,8 @@ select.text-input {
 .shoot-box {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
   background: var(--surface);
@@ -499,11 +514,11 @@ select.text-input {
 .num-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
 
 .num-btn {
-  padding: 11px 0;
+  padding: 13px 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -590,7 +605,7 @@ select.text-input {
   left: 0;
   width: max-content;
   max-width: min(280px, calc(100vw - 40px));
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -633,13 +648,13 @@ select.text-input {
 .pay-table {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .pay-row {
   display: grid;
-  grid-template-columns: 40px 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: 44px 1fr 1fr;
+  gap: 10px;
   align-items: center;
 }
 
@@ -720,7 +735,7 @@ select.text-input {
 
 /* Meld builder panel */
 .meld-builder {
-  padding: 12px;
+  padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface);
@@ -747,7 +762,7 @@ select.text-input {
 .hand-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .hand-card {
@@ -755,7 +770,7 @@ select.text-input {
   border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--shadow-xs);
-  padding: 11px 13px;
+  padding: 14px 15px;
 }
 
 .hand-top {
@@ -786,7 +801,7 @@ select.text-input {
 }
 
 .hand-tai .tai-in {
-  width: 52px;
+  width: 60px;
   margin-bottom: 0;
   text-align: center;
   font-family: var(--font-mono);
@@ -799,9 +814,9 @@ select.text-input {
 
 /* Per-hand "note for me" field — subtle, full-width, sits below the demo. */
 .hand-inp.text-input {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   font-size: var(--text-xs);
-  padding: 6px 9px;
+  padding: 8px 10px;
   background: var(--bg-subtle);
 }
 
@@ -812,25 +827,25 @@ select.text-input {
 /* Per-group scoring dropdown — wider than the standalone free-text tai input. */
 .hand-tai .tai-sel {
   width: auto;
-  min-width: 104px;
+  min-width: 112px;
   margin-bottom: 0;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  padding: 6px 8px;
+  padding: 8px 10px;
 }
 
 /* Settings tab strip (per-group settings menu). */
 .tabs {
   display: flex;
   gap: 4px;
-  margin: 0 0 14px;
+  margin: 0 0 18px;
   border-bottom: 1px solid var(--border);
 }
 
 .tab {
   border: none;
   background: none;
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
@@ -854,8 +869,8 @@ select.text-input {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 /* The title must be able to SHRINK (flex min-width:auto would otherwise hold the
@@ -896,8 +911,8 @@ select.text-input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
@@ -924,15 +939,15 @@ select.text-input {
 }
 
 h1 .icon-btn {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
 }
 
 /* Section break between the players area and the tabbed subsection */
 .section-break {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 20px 0 14px;
+  margin: 26px 0 18px;
 }
 
 /* Invite link row (link + copy button) */
@@ -959,8 +974,8 @@ h1 .icon-btn {
   background: var(--danger-subtle);
   border: 1px solid var(--danger);
   border-radius: var(--radius-md);
-  padding: 8px 11px;
-  margin: 8px 0;
+  padding: 10px 13px;
+  margin: 10px 0;
 }
 
 .hand-demo {
@@ -1010,8 +1025,8 @@ h1 .icon-btn {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
   background: var(--bg-subtle);
-  padding: 12px 14px;
-  margin-top: 8px;
+  padding: 14px 16px;
+  margin-top: 10px;
 }
 
 .check-row {
@@ -1032,9 +1047,9 @@ h1 .icon-btn {
 
 /* Result card */
 .result {
-  margin-top: 22px;
+  margin-top: 24px;
   border-radius: var(--radius-card);
-  padding: 18px;
+  padding: 20px;
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
@@ -1043,7 +1058,7 @@ h1 .icon-btn {
 /* A result card used as an in-content banner (share card, session box,
    confirm screens) rather than at the bottom of a form. */
 .result.banner {
-  margin: 0 0 14px;
+  margin: 0 0 18px;
 }
 
 .result .total {

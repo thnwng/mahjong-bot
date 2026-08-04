@@ -22,7 +22,7 @@ Follows the workspace standard: `E:\Claude\telegram-mini-app-standard.md`
 | `lib/sg/payout.ts` | SG money engine (pure; unit-tested in `payout.test.ts`). `PayoutConfig` incl. `zimoBonus` (flat per-pax self-draw bonus) |
 | `lib/sg/actions.ts` | Pure record-action wizard logic (`stepsFor`/`buildResult`): concealed anyao/angang doubling, gang-shoot pao (shooter pays nOther×), the shoot selector. **Unit-tested in `actions.test.ts`** (the money paths) — no React/Telegram imports so it stays testable |
 | `lib/sg/remote.ts` | Client API layer: `{op, initData}` calls to the `track` function; localStorage caches; `USERNAME_RE` (the single client copy) |
-| `lib/riichi/` | Riichi engine: `analyze.ts` (hand decomposition), `yaku.ts`, `scoring.ts` (unit-tested) |
+| `lib/riichi/` | Riichi engine: `analyze.ts` (hand decomposition — unit-tested since 2026-08-04, `analyze.test.ts`, 24 cases incl. the suuankou-vs-sanankou tsumo/ron split and best-interpretation selection), `yaku.ts`, `scoring.ts` (unit-tested) |
 | `supabase/functions/track/` | THE backend: validates Telegram initData (HMAC) on every call, service-role DB access |
 | `supabase/functions/bot/` | Webhook bot (@jpgmahjongbot): /start /open /help, group binding, fail-closed secret check |
 | `supabase/schema.sql` | Complete reference schema (mirror of all applied migrations) |

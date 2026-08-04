@@ -5,12 +5,26 @@ whole codebase. Workspace-wide rules distilled from this review live in
 `E:\Claude\telegram-mini-app-standard.md`. Items are phased by payoff-per-effort;
 each was kept only if it fixes a pain this project actually hit.
 
-## Status (updated 2026-07-05 against the repo; previous snapshot 2026-07-02)
+## Status (updated 2026-08-04 against the repo AND the live system; previous snapshots 2026-07-05, 2026-07-02)
 
-- **DONE — Phase 1**: items 1-9 all shipped and live. Item 3's one-time
-  caveat is resolved: the `SUPABASE_ACCESS_TOKEN` repo secret was set
-  2026-07-02 and `deploy-functions.yml` has only green runs since (latest
-  2026-07-03) — git push = function deploy.
+- **DONE — Phase 1, re-verified END-TO-END 2026-08-04** against the campaign
+  skill's six measurable success criteria (mahjong-web-hardening-campaign,
+  "Success at campaign end"): (1) `deno check` green in CI ("Deploy Edge
+  Functions" run for `e18af8b`, 2026-07-16, success); (2) money-engine tests
+  green in CI ("Deploy to GitHub Pages" run for `d814939`, 2026-07-30,
+  success — locally 86 tests / 7 files, payout 12 cases, scoring 14 tests
+  covering every named oracle case incl. all five limit tiers in one test);
+  (3) live forged-webhook probes both return `{"error":"unauthorized"}`
+  HTTP 401 (no secret header AND wrong secret header, curled 2026-08-04);
+  (4) `setup-group` op absent at HEAD and the live functions were last
+  deployed by CI from `e18af8b`, which contains the fix; (5) git answers
+  "what is live" — `supabase/config.toml` + `deploy-functions.yml` committed,
+  SUPABASE_SETUP.md's only "paste" lines are the schema-SQL step (correct by
+  design) and the "Never paste code into the dashboard" prohibition itself;
+  (6) working tree clean, `main` == `origin/main` == `develop` at `d814939`.
+  Item 3's one-time caveat is resolved: the `SUPABASE_ACCESS_TOKEN` repo
+  secret was set 2026-07-02 and `deploy-functions.yml` has only green runs
+  since — git push = function deploy.
 - **DONE — Phase 2**: item 10 (numbered migrations ADOPTED, verified
   2026-07-05 — `supabase/migrations/` 0001_baseline / 0002_sessions_and_prefs /
   0003_display_name committed, process documented in CLAUDE.md, `schema.sql`
